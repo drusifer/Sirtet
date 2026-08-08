@@ -1,4 +1,4 @@
-# Tetris (Rust)
+# Sirtet
 
 A single-player terminal Tetris game written in Rust, using `crossterm` for the TUI.
 
@@ -48,3 +48,7 @@ The engine (`board`/`piece`/`game`) has zero terminal dependency and is fully co
 
 This project uses the [bob-protocol](agents/AGENTS.md) multi-persona workflow. See
 `agents/CHAT.md` for the team communication log and `agents/*.docs/` for persona state.
+
+## License
+
+GPLv3 — see [LICENSE](LICENSE).
