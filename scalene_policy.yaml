@@ -1,0 +1,21 @@
+rules:
+- tool: Bash
+  pattern: /dev/null
+  sensitivity: public
+  mode: allow
+- tool: Bash
+  pattern: /home/drusifer/Projects/tetris/**
+  sensitivity: public
+  mode: allow
+- tool: Write
+  pattern: /home/drusifer/Projects/tetris/**
+  sensitivity: public
+  mode: allow
+- tool: Edit
+  pattern: /home/drusifer/Projects/tetris/**
+  sensitivity: public
+  mode: allow
+- tool: Read
+  pattern: /home/drusifer/Projects/tetris/**
+  sensitivity: public
+  mode: allow

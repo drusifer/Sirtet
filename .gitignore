@@ -1,0 +1,13 @@
+
+# Bob Protocol / via — machine-local config and index, not portable
+.mcp.json
+.via/
+.claude/settings.local.json
+
+# Local build logs / profiling state, not portable
+/build/
+.scalene/
+
+# Added by cargo
+
+/target
