@@ -13,17 +13,17 @@ None yet.
 - Write tool has an intermittent per-path permission gate; Bash heredoc/Edit work as fallback.
 
 ## Current Task
-**Status:** Phase plan handed to Morpheus for review
+**Status:** Sprint 2 phase plan handed to Morpheus for review
 **Assigned to:** Mouse (self) -> Morpheus
-**Started:** 2026-08-07
+**Started:** 2026-08-08
 
 ### Task Description
-Break approved architecture into sprint-sized phases in task.md, log in sprint_log.md, hand
-to Morpheus for plan review before Neo starts Phase 1.
+Break Sprint 2's approved architecture (dual renderer) into sprint-sized phases in task.md,
+log in sprint_log.md, hand to Morpheus for plan review before Neo starts Phase 1.
 
 ### Progress
-- [x] task.md written with 7 phases
-- [x] agents/mouse.docs/sprint_log.md written
+- [x] task.md appended with Sprint 2 section: 6 phases, 2-3 tasks each
+- [x] agents/mouse.docs/sprint_log.md updated with Sprint 2 entry + phase-order rationale
 - [x] Posted handoff to CHAT.md @Morpheus *lead review sprint plan
 
 ### Blockers
@@ -34,7 +34,7 @@ None yet
 
 ## Next Steps
 ### Immediate Next Action
-Wait for Morpheus's plan-review verdict, then track Phase 1-7 Bloop progress (assign to Neo,
+Wait for Morpheus's plan-review verdict, then track Phase 1-6 Bloop progress (assign to Neo,
 watch for blockers > 1 cycle).
 
 ### Waiting On

@@ -38,6 +38,7 @@ pub struct Game {
     score: u32,
     level: u32,
     lines_cleared: u32,
+    last_lines_cleared: u32,
 }
 
 impl Game {
@@ -53,6 +54,7 @@ impl Game {
             score: 0,
             level: 1,
             lines_cleared: 0,
+            last_lines_cleared: 0,
         }
     }
 
@@ -100,6 +102,13 @@ impl Game {
 
     pub fn lines_cleared(&self) -> u32 {
         self.lines_cleared
+    }
+
+    /// How many lines were cleared by the most recent lock (0 if the last lock cleared
+    /// none, or if no piece has locked yet). Renderers use this to trigger a one-shot
+    /// visual effect; it is not cumulative like `lines_cleared()`.
+    pub fn last_lines_cleared(&self) -> u32 {
+        self.last_lines_cleared
     }
 
     pub fn gravity_interval_ms(&self) -> u64 {
@@ -176,6 +185,7 @@ impl Game {
         let id = self.active.piece_type.id();
         self.board.lock_cells(&self.active.cells(), id);
         let cleared = self.board.clear_full_lines();
+        self.last_lines_cleared = cleared as u32;
         if cleared > 0 {
             self.score += line_clear_base_score(cleared) * self.level;
             self.lines_cleared += cleared as u32;
@@ -359,6 +369,29 @@ mod tests {
         game.lock_active();
         assert_eq!(game.score, 0);
         assert_eq!(game.lines_cleared, 0);
+    }
+
+    #[test]
+    fn last_lines_cleared_reflects_most_recent_lock_only() {
+        let mut game = Game::new();
+        assert_eq!(game.last_lines_cleared(), 0, "nothing locked yet");
+
+        game.board.test_fill_row(crate::board::HEIGHT - 1, None, 9);
+        game.lock_active();
+        assert_eq!(game.last_lines_cleared(), 1);
+
+        for y in (crate::board::HEIGHT - 4)..crate::board::HEIGHT {
+            game.board.test_fill_row(y, None, 9);
+        }
+        game.lock_active();
+        assert_eq!(game.last_lines_cleared(), 4, "a tetris updates the accessor to 4");
+
+        game.lock_active();
+        assert_eq!(
+            game.last_lines_cleared(),
+            0,
+            "a lock with no completed row must reset the accessor to 0, not leave it stale"
+        );
     }
 
         #[test]

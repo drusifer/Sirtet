@@ -69,3 +69,98 @@ end-to-end *user test)
 
 ## Out of scope (backlog, not this sprint)
 Hold piece, ghost piece, SRS wall-kick, sound, persistent high scores, configurable keybinds.
+
+---
+
+# Sprint 2 — Dual Renderer: Terminal + Accelerated 3D ("Neon Grid")
+
+**Status:** Sprint 2 launched (2026-08-08). All 6 phases implemented and approved; Smith's
+e2e test passed with 2 disclosed gaps needing real-hardware verification (see Known
+Limitations below).
+**Date:** 2026-08-08
+
+Gates cleared: Smith Gate 1 (stories US-9..US-14, approved w/ 2 additions) + Gate 2
+(architecture, approved). See docs/PRD.md, docs/USER_STORIES.md, docs/ARCHITECTURE.md
+Sprint 2 addenda.
+
+Cycle per phase: Neo implements (TDD where applicable) -> Trin UAT -> Morpheus review -> next phase.
+
+## Phase 1 — Scaffold: dependency + module extraction + CLI parsing
+- [x] 1.1 Add `macroquad` to Cargo.toml (per ARCHITECTURE.md decision #1)
+- [x] 1.2 Extract Sprint 1's `main.rs` body into `src/terminal.rs` as `pub fn run(game: Game) -> ExitCode`; `main.rs` shrinks to a stub that calls it (no behavior change — pure move)
+- [x] 1.3 Hand-rolled `--renderer=terminal|3d` parsing in `main.rs`; invalid value prints valid options and exits before rendering (US-9 AC); unit test the parsing function
+**Stories:** US-9 (flag form), US-10 (regression guard via pure-move extraction)
+
+## Phase 2 — Startup picker
+- [x] 2.1 Crossterm-based picker (Up/Down move selection, Enter confirms, Esc/Q exits cleanly) shown when no `--renderer` flag is given
+- [x] 2.2 Manual PTY test: picker navigation, selection launches correct mode, Esc/Q quits without starting a game
+**Stories:** US-9 (picker + Gate 1 keyboard-nav addition)
+
+## Phase 3 — Engine accessor (additive only)
+- [x] 3.1 `Game::last_lines_cleared() -> u32` accessor (ARCHITECTURE.md decision #8), non-breaking
+- [x] 3.2 Unit tests: accessor reflects 0/1/2/3/4-line clears correctly, resets appropriately on next lock with no clear
+**Stories:** US-11 (feeds 3D line-clear effect)
+
+## Phase 4 — 3D renderer scaffold: static scene
+- [x] 4.1 `src/gfx3d.rs`: macroquad window/camera setup, board + active piece rendered as cubes, dark background, neon per-piece palette, cheap glow via translucent backing quad (decision #6)
+- [x] 4.2 Next-piece preview + score/level/lines HUD in 3D mode (parity with terminal's info, US-12)
+- [x] 4.3 Manual smoke test: `cargo run -- --renderer=3d` shows a playable-looking static board (verified via X11 screenshot + xdotool window-title check, this sandbox has a real display)
+**Stories:** US-11, US-12 (info parity)
+
+## Phase 5 — 3D motion, input, effects
+- [x] 5.1 Smooth interpolated piece motion between gravity ticks (decision #7) + input wired to the same Game methods as terminal mode (US-12)
+- [x] 5.2 Line-clear flash effect (~300ms) using `last_lines_cleared()` (US-11) — whole-scene flash, not per-row, since the engine only exposes a count (see Known Limitations below)
+- [x] 5.3 Control legend/HUD in 3D mode, styled to theme (US-12 parity w/ US-8); window-close (OS "X") relies on macroquad's normal frame-loop exit (US-14)
+**Stories:** US-11, US-12, US-14
+
+## Phase 6 — Fallback + full integration
+- [x] 6.1 `catch_unwind` around the 3D renderer call (decision #9, scope note below): on
+      failure, print the one-line fallback message and call `terminal::run(game)` (US-13).
+      Verified end-to-end by temporarily forcing a panic in `gfx3d::run`, confirming the
+      message prints, terminal mode starts and is playable, and the panic hook suppression
+      means no raw backtrace is shown — then reverted the forced panic.
+- [x] 6.2 Full regression pass: `cargo test` (34 engine + 4 cli), PTY smoke test of terminal
+      mode confirms US-1..US-8 unchanged (US-10)
+- [x] 6.3 `cargo build --release` clean + `cargo clippy --all-targets` clean; manual smoke
+      test of all 4 entry paths: `--renderer=terminal`, `--renderer=3d`, no-flag picker,
+      forced-fallback (US-13) — all verified working
+**Stories:** cross-cutting — final integration before Stage 3 close
+
+**Scope note on 6.1 (decision #9 deviation, flagged for Morpheus/Smith):** the architecture
+doc's original plan was to scope `catch_unwind` to *only* the window/GPU init step, not the
+full 3D session. In practice `macroquad::Window::from_config` bundles init and the entire
+game loop into one call with no way to separate them, so the fallback wraps the whole 3D
+session instead. This still satisfies US-13's AC (no crash, clean fallback message, terminal
+mode starts) and is arguably a stronger guarantee (any 3D-mode panic recovers gracefully,
+not just init failures) — the tradeoff is that a genuine mid-session 3D bug would also
+silently fall back to terminal rather than being visibly distinguishable from "no GPU".
+
+---
+
+## Sprint 2 out of scope (backlog, not this sprint)
+Persistent renderer preference, additional 3D themes/skins, graphics settings UI,
+mid-session renderer switching. (Sprint 1 backlog — hold/ghost/SRS/sound/persistence/
+keybind-config — still separately open, not part of Sprint 2.)
+
+## Sprint 2 known limitations (updated post-launch, real-hardware verification)
+- **RESOLVED — real Wayland session bug found and fixed post-launch:** on a real Wayland
+  laptop (not this sandbox), `--renderer=3d` opened a window that was created but never
+  mapped (`xwininfo` showed `Map State: IsUnMapped` deterministically, 3/3 repro attempts)
+  — the window existed and rendered correctly (confirmed via direct pixel capture) but was
+  never actually shown on screen, because `miniquad` defaults to X11/XWayland on Linux and
+  XWayland's window-mapping handshake silently failed on this compositor. Fixed by forcing
+  `miniquad::conf::Platform { linux_backend: LinuxBackend::WaylandOnly, .. }` in
+  `gfx3d.rs`'s `window_conf()`, sidestepping XWayland entirely. **Confirmed working on real
+  hardware afterward: the game is visible, and all keyboard controls (movement, rotation,
+  hard drop, pause, restart, quit) work correctly.** This also resolves the sandbox's
+  synthetic-input-testing gap noted below — real input works fine now that rendering goes
+  through native Wayland instead of XWayland.
+- Live keyboard input in 3D mode could not be verified *in this development sandbox*
+  (confirmed via `xev` that synthetic/XTest key events aren't delivered to any X window
+  here) — now moot for real users since native Wayland is the default path and has been
+  confirmed working directly by a user on real hardware.
+- Line-clear visual effect (US-11) is a whole-scene flash, not per-row, since
+  `Game::last_lines_cleared()` only exposes a count, not row indices (ARCHITECTURE.md
+  decision #8's chosen scope). Still accurate, not affected by the Wayland fix.
+- The `catch_unwind` fallback (US-13) covers the whole 3D session, not just init — see the
+  Phase 6.1 scope note above. Still accurate.
