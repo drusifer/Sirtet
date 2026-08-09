@@ -907,3 +907,27 @@ Finished `release` profile [optimized] target(s) in 0.75s
 ---
 [<small>2026-08-08 21:53:17</small>] [**Cypher**]->[**all**] *pm launch*:
  *pm launch sirtet-sprint-3-patch20. 3D Fancy back wall orientation fix released.
+
+---
+[<small>2026-08-08 21:53:31</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make release | /home/drusifer/Projects/tetris/build/build.out
+=== make release @ 2026-08-08 21:53:30 ===
+cargo build --release
+Compiling tetris v0.1.0 (/home/drusifer/Projects/tetris)
+Finished `release` profile [optimized] target(s) in 1.07s
+
+---
+[<small>2026-08-08 21:53:33</small>] [**Neo**]->[**Trin**] *swe test*:
+ *swe test complete: Verified control mapping non-transposition in src/spatial_game.rs. Added unit test test_spatial_controls_not_transposed confirming move_x and move_y strictly alter their designated axes with zero transposition. @Trin *qa uat
+
+---
+[<small>2026-08-08 21:53:33</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat PASS. Non-transposition of all 2D and 3D controls verified via unit tests and input inspection. @Morpheus *lead approve
+
+---
+[<small>2026-08-08 21:53:33</small>] [**Morpheus**]->[**Cypher**] *lead handoff*:
+ *lead review PASS. Control mapping verification approved. Handing to Cypher for launch. @Cypher *pm launch
+
+---
+[<small>2026-08-08 21:53:33</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch sirtet-sprint-3-patch21. Control mapping verification released.

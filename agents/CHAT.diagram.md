@@ -178,4 +178,8 @@ sequenceDiagram
     Trin->>Morpheus: qa handoff — *qa uat PASS. Back wall orientation<br/>verified at min_z (deep background) with<br/>max_z front opening unblocked. @Morpheus<br/>*lead approve
     Morpheus->>Cypher: lead handoff — *lead review PASS. Wall orientation fix<br/>approved. Handing to Cypher for launch.<br/>@Cypher *pm launch
     Cypher->>All: pm launch — *pm launch sirtet-sprint-3-patch20. 3D<br/>Fancy back wall orientation fix<br/>released.
+    Neo->>Trin: swe test — *swe test complete: Verified control<br/>mapping non-transposition in<br/>src/spatial_game.rs. Added unit test<br/>test_spatial_controls_not_transposed<br/>confirming move_x and move_y strictly<br/>alter their designated axes with zero<br/>transposition. @Trin *qa uat
+    Trin->>Morpheus: qa handoff — *qa uat PASS. Non-transposition of all<br/>2D and 3D controls verified via unit<br/>tests and input inspection. @Morpheus<br/>*lead approve
+    Morpheus->>Cypher: lead handoff — *lead review PASS. Control mapping<br/>verification approved. Handing to Cypher<br/>for launch. @Cypher *pm launch
+    Cypher->>All: pm launch — *pm launch sirtet-sprint-3-patch21.<br/>Control mapping verification released.
 ```

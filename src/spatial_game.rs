@@ -459,7 +459,30 @@ mod tests {
     }
 
     #[test]
+    fn test_spatial_controls_not_transposed() {
+        let mut game = SpatialGame::new();
+        let orig_x = game.active_piece.x;
+        let orig_y = game.active_piece.y;
+        let orig_z = game.active_piece.z;
+
+        // move_x alters X only, leaving Y and Z untouched
+        if game.move_x(-1) || game.move_x(1) {
+            assert_ne!(game.active_piece.x, orig_x);
+            assert_eq!(game.active_piece.y, orig_y, "move_x must not transpose into Y");
+            assert_eq!(game.active_piece.z, orig_z, "move_x must not transpose into Z");
+        }
+
+        // move_y alters Y only, leaving X and Z untouched
+        let curr_x = game.active_piece.x;
+        if game.move_y(-1) || game.move_y(1) {
+            assert_eq!(game.active_piece.x, curr_x, "move_y must not transpose into X");
+            assert_eq!(game.active_piece.z, orig_z, "move_y must not transpose into Z");
+        }
+    }
+
+    #[test]
     fn test_spatial_game_last_layers_cleared_reset() {
+
         let mut game = SpatialGame::new();
         assert_eq!(game.last_layers_cleared, 0);
         game.tick();
