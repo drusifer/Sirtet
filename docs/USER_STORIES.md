@@ -204,3 +204,75 @@ Between System and Real World / platform convention, #4 Consistency and Standard
 US-9<->Goal 2; US-10<->Goal 3,4 (regression guard); US-11<->Goal 1; US-12<->Goal 3,4;
 US-13<->Goal 5; US-14<->Goal 1 (platform-consistent window behavior — added at Smith's
 Gate 1 review, same pattern as Sprint 1's US-8).
+
+---
+
+# Sprint 3: Spatial 3D Box Tetris (TUI & Fancy GPU Modes)
+
+**Owner:** Cypher (PM)
+**Status:** Draft for Smith review (Gate 1)
+**Date:** 2026-08-08
+
+## US-15: Choose between 4 game/renderer modes at launch
+**As a** player, **I want** to select from 4 distinct modes (2D Terminal, 2D Fancy GPU, 3D Box Terminal, 3D Box Fancy GPU) at startup, **so that** I can play classic 2D or spatial 3D Tetris in my preferred renderer environment.
+
+**AC:**
+- `cargo run -- --renderer=terminal` launches 2D Terminal Tetris.
+- `cargo run -- --renderer=3d` launches 2D Fancy GPU Tetris.
+- `cargo run -- --renderer=terminal_3d` (alias `tui_3d`) launches 3D Spatial Box Terminal Tetris.
+- `cargo run -- --renderer=3d_box` (alias `blockout`) launches 3D Spatial Box Fancy GPU Tetris.
+- `cargo run` with no flag presents an interactive startup picker displaying all 4 choices cleanly (1. Terminal 2D, 2. Fancy GPU 2D, 3. Terminal 3D Box, 4. Fancy GPU 3D Box).
+- Up/Down + Enter navigates and selects options in the picker; Esc/Q quits cleanly.
+
+## US-16: Core 3D Spatial Game Engine
+**As a** player, **I want** a true 3D spatial grid engine with 3D polycube pieces falling down a 3D rectangular box/well, **so that** gameplay requires 3D spatial reasoning.
+
+**AC:**
+- A 3D box grid of size 5x5x10 (X=5 width, Y=5 depth, Z=10 height) is maintained.
+- Standard 3D polycubes (tricubes/tetracubes) spawn centered at top Z=0.
+- Gravity advances pieces down the Z axis.
+- Collision detection validates piece placement against box boundaries (X, Y, Z) and existing locked 3D blocks.
+- When a piece landed cannot move further down Z, it locks into the 3D grid.
+
+## US-17: 3D Spatial Movement & 3D Rotation Controls
+**As a** player, **I want** to move pieces across X and Y axes, drop them down Z, and rotate them around X, Y, and Z axes, **so that** I can maneuver pieces into complex 3D stack configurations.
+
+**AC:**
+- Arrow keys / WASD move the active piece across X (left/right) and Y (forward/backward) axes.
+- Space performs hard drop down Z (instantly drops and locks).
+- Down arrow performs soft drop down Z.
+- Dedicated keys (e.g. `X`, `Y`, `Z` or `I`/`J`/`K`) perform 90-degree 3D rotations around pitch (X), yaw (Y), and roll (Z) axes.
+- Rotations/moves resulting in collisions are rejected safely.
+
+## US-18: 3D Layer Clearing & Scoring
+**As a** player, **I want** full horizontal XxY layers to clear when filled and grant score, **so that** I am rewarded for filling 3D levels.
+
+**AC:**
+- When all 5x5=25 grid positions at a given Z level are filled with locked blocks, that Z layer clears.
+- All layers above the cleared layer shift down Z by 1.
+- Clearing 1, 2, 3, or 4 layers simultaneously awards exponentially scaling score points.
+- Layer cleared count is tracked and updated in real-time.
+
+## US-19: Terminal (TUI) 3D Box Renderer
+**As a** terminal user, **I want** to play 3D Spatial Box Tetris inside a standard ANSI terminal using isometric wireframe rendering, **so that** I don't need a GPU to play 3D Tetris.
+
+**AC:**
+- Terminal 3D mode (`terminal_3d`) renders an isometric/axonometric wireframe representation of the 5x5x10 box in ANSI text.
+- Grid depth and block positions are visually distinguishable using ASCII/ANSI character gradients/depth cues.
+- Next piece preview, score, level, layers cleared, and 3D control legend are visible on screen in TUI.
+
+## US-20: Fancy GPU 3D Box Renderer
+**As a** player with a graphics card, **I want** a fully accelerated 3D Macroquad scene for 3D Box Tetris, **so that** I can experience glowing 3D polycubes and smooth 3D box projection.
+
+**AC:**
+- GPU 3D Box mode (`3d_box`) renders a 3D Macroquad viewport with an isometric/perspective camera framing the wireframe box well.
+- 3D polycubes render as glowing 3D cubes in space.
+- Full HUD and control legend are rendered on overlay panels.
+- If GPU initialization fails, gracefully falls back to Terminal 3D mode with a message (per US-13 pattern).
+
+---
+
+## Sprint 3 Fast-Follow
+- Custom box size selection (e.g. 3x3x10, 4x4x10, 6x6x12).
+- Pentacube / extended piece sets toggle.
+

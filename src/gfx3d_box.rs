@@ -1,11 +1,13 @@
 use macroquad::prelude::*;
 
-use tetris::board::{HEIGHT, WIDTH};
-use tetris::game::{Game, GameState};
+use tetris::spatial_game::{
+    Axis, GameState, SpatialGame, BOX_DEPTH, BOX_HEIGHT, BOX_WIDTH,
+};
 
-const CELL_SIZE: f32 = 0.5;
-const BOARD_ORIGIN_X: f32 = -(WIDTH as f32 * CELL_SIZE) / 2.0;
-const BOARD_ORIGIN_Y: f32 = (HEIGHT as f32 * CELL_SIZE) / 2.0;
+const CUBE_SIZE: f32 = 0.85;
+const ORIGIN_X: f32 = -(BOX_WIDTH as f32 * CUBE_SIZE) / 2.0;
+const ORIGIN_Y: f32 = (BOX_HEIGHT as f32 * CUBE_SIZE) / 2.0;
+const ORIGIN_Z: f32 = -(BOX_DEPTH as f32 * CUBE_SIZE) / 2.0;
 
 const FX_DURATION: f64 = 0.5;
 
@@ -18,12 +20,12 @@ struct OrbitCamera {
 }
 
 impl OrbitCamera {
-    fn default_2d_fancy() -> Self {
+    fn default_3d_box() -> Self {
         Self {
             yaw: 0.0,
-            pitch: 0.12,
-            distance: 13.0,
-            target: vec3(0.0, -0.5, 0.0),
+            pitch: 0.35,
+            distance: 12.0,
+            target: vec3(0.0, 0.0, 0.0),
             shake_intensity: 0.0,
         }
     }
@@ -56,16 +58,16 @@ impl OrbitCamera {
         if is_key_down(KeyCode::Minus) { self.distance = (self.distance + 0.2).min(30.0); }
 
         if is_key_pressed(KeyCode::C) {
-            *self = Self::default_2d_fancy();
+            *self = Self::default_3d_box();
         }
     }
 
     fn camera_3d(&self) -> Camera3D {
         let shake_offset = if self.shake_intensity > 0.0 {
             vec3(
-                rand::gen_range(-0.18, 0.18) * self.shake_intensity,
-                rand::gen_range(-0.18, 0.18) * self.shake_intensity,
-                rand::gen_range(-0.18, 0.18) * self.shake_intensity,
+                rand::gen_range(-0.15, 0.15) * self.shake_intensity,
+                rand::gen_range(-0.15, 0.15) * self.shake_intensity,
+                rand::gen_range(-0.15, 0.15) * self.shake_intensity,
             )
         } else {
             vec3(0.0, 0.0, 0.0)
@@ -100,7 +102,7 @@ impl ViewCubeGizmo {
             is_dragging: false,
             drag_start_mouse: vec2(0.0, 0.0),
             drag_start_yaw: 0.0,
-            drag_start_pitch: 0.12,
+            drag_start_pitch: 0.35,
         }
     }
 
@@ -248,17 +250,17 @@ fn piece_color(id: u8) -> Color {
     }
 }
 
-fn cell_world_pos(x: i32, y: f32) -> Vec3 {
+fn block_world_pos(x: i8, y: i8, z: i8) -> Vec3 {
     vec3(
-        BOARD_ORIGIN_X + x as f32 * CELL_SIZE + CELL_SIZE / 2.0,
-        BOARD_ORIGIN_Y - y * CELL_SIZE - CELL_SIZE / 2.0,
-        0.0,
+        ORIGIN_X + x as f32 * CUBE_SIZE + CUBE_SIZE / 2.0,
+        ORIGIN_Y - z as f32 * CUBE_SIZE - CUBE_SIZE / 2.0,
+        ORIGIN_Z + y as f32 * CUBE_SIZE + CUBE_SIZE / 2.0,
     )
 }
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Sirtet — Neon Grid".to_owned(),
+        window_title: "Sirtet — Spatial 3D Box Tetris (Blockout Mode)".to_owned(),
         window_width: 1024,
         window_height: 768,
         platform: miniquad::conf::Platform {
@@ -269,25 +271,27 @@ fn window_conf() -> Conf {
     }
 }
 
-pub fn run(game: Game) {
+pub fn run(game: SpatialGame) {
     macroquad::Window::from_config(window_conf(), amain(game));
 }
 
-async fn amain(mut game: Game) {
-    let mut orbit_cam = OrbitCamera::default_2d_fancy();
+async fn amain(mut game: SpatialGame) {
+    let mut orbit_cam = OrbitCamera::default_3d_box();
     let mut viewcube = ViewCubeGizmo::new();
     let mut last_tick = get_time();
 
     let mut land_fx_start: Option<f64> = None;
     let mut clear_fx_start: Option<f64> = None;
-    let mut prev_active_y = game.active().y;
-
+    let mut clear_fx_layers;
+    let mut prev_active_z = game.active_piece.z;
 
     let mut banner_msg: Option<(String, f64)> = None;
 
+
+
     loop {
         let now = get_time();
-        let interval = (game.gravity_interval_ms() as f64 / 1000.0).max(0.001);
+        let interval = (tetris::spatial_game::spatial_gravity_interval_ms(game.level) as f64) / 1000.0;
 
         if is_quit_requested() {
             break;
@@ -301,55 +305,56 @@ async fn amain(mut game: Game) {
             game.tick();
             last_tick = now;
 
-            // Detect genuine piece lock landing (piece locked and new piece spawned at top y=0)
-            if game.active().y < prev_active_y {
+            // Detect genuine 3D piece lock landing (piece locked and new piece spawned at top z=0)
+            if game.active_piece.z < prev_active_z {
                 land_fx_start = Some(now);
                 orbit_cam.add_shake(0.35);
             }
         }
-        prev_active_y = game.active().y;
+        prev_active_z = game.active_piece.z;
 
-        // Detect line clear event immediately on lock (hard drop or gravity tick)
-        let cleared = game.last_lines_cleared();
-        if cleared > 0 && clear_fx_start.is_none() {
+        // Detect 3D layer clear event immediately on lock (hard drop or gravity tick)
+        if game.last_layers_cleared > 0 && clear_fx_start.is_none() {
             clear_fx_start = Some(now);
+            clear_fx_layers = game.last_layers_cleared;
             orbit_cam.add_shake(0.85);
 
-            let msg = match cleared {
-                1 => "SINGLE LINE CLEAR! +100",
-                2 => "DOUBLE LINE CLEAR! +300",
-                3 => "TRIPLE LINE CLEAR! +500",
-                _ => "💥 TETRIS LINE CLEAR! +800",
+            let msg = match clear_fx_layers {
+                1 => "SINGLE LAYER CLEAR! +100",
+                2 => "DOUBLE LAYER CLEAR! +300",
+                3 => "TRIPLE LAYER CLEAR! +600",
+                _ => "💥 QUAD 3D LAYER EXPLOSION! +1000",
             };
             banner_msg = Some((msg.to_string(), now));
         }
 
 
-
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
 
         set_camera(&orbit_cam.camera_3d());
-        draw_board(&game);
+        draw_bounding_box_well();
+        draw_spatial_grid(&game);
 
-        // Draw 3D Landing shockwave pulses on 2D board
+        // Draw 3D Landing shockwave pulses
         if let Some(start) = land_fx_start {
             let elapsed = now - start;
             if elapsed < FX_DURATION {
                 let t = (elapsed / FX_DURATION) as f32;
-                let bottom_y = BOARD_ORIGIN_Y - HEIGHT as f32 * CELL_SIZE;
+                let floor_y = ORIGIN_Y - BOX_HEIGHT as f32 * CUBE_SIZE;
+
                 for ring_i in 1..=3 {
-                    let r_scale = 1.0 + t * (0.3 * ring_i as f32);
-                    let alpha = (1.0 - t) * (0.85 / ring_i as f32);
+                    let r_scale = 1.0 + t * (0.25 * ring_i as f32);
+                    let alpha = (1.0 - t) * (0.8 / ring_i as f32);
                     let ring_color = Color::new(0.1, 1.0, 0.85, alpha);
-                    let width = (WIDTH as f32 * CELL_SIZE) * r_scale;
-                    draw_cube_wires(vec3(0.0, bottom_y, 0.0), vec3(width, 0.4 * ring_i as f32, 0.4), ring_color);
+                    let sz = (BOX_WIDTH as f32 * CUBE_SIZE) * r_scale;
+                    draw_cube_wires(vec3(0.0, floor_y, 0.0), vec3(sz, 0.3 * ring_i as f32, sz), ring_color);
                 }
             } else {
                 land_fx_start = None;
             }
         }
 
-        // Draw 3D Line Clear shockwave expansion rings
+        // Draw 3D Layer Clear shockwave burst rings
         if let Some(start) = clear_fx_start {
             let elapsed = now - start;
             if elapsed < FX_DURATION {
@@ -358,32 +363,31 @@ async fn amain(mut game: Game) {
                 let gold = Color::new(1.0, 0.9, 0.2, alpha);
                 let cyan = Color::new(0.0, 0.95, 1.0, alpha);
 
-                let center_y = BOARD_ORIGIN_Y - (HEIGHT as f32 * CELL_SIZE) / 2.0;
-                let w = (WIDTH as f32 * CELL_SIZE) * (1.0 + t * 0.5);
-                let h = (HEIGHT as f32 * CELL_SIZE) * (1.0 + t * 0.5);
+                let center_y = ORIGIN_Y - (BOX_HEIGHT as f32 * CUBE_SIZE) / 2.0;
+                let size = (BOX_WIDTH as f32 * CUBE_SIZE) * (1.0 + t * 0.6);
 
-                draw_cube(vec3(0.0, center_y, 0.0), vec3(w, h, CELL_SIZE), None, Color::new(1.0, 0.85, 0.1, alpha * 0.25));
-                draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(w, h, CELL_SIZE), gold);
-                draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(w * 1.12, h * 1.12, CELL_SIZE * 1.5), cyan);
+                draw_cube(vec3(0.0, center_y, 0.0), vec3(size, CUBE_SIZE * 2.0, size), None, Color::new(1.0, 0.8, 0.1, alpha * 0.3));
+                draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(size, CUBE_SIZE * 2.0, size), gold);
+                draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(size * 1.15, CUBE_SIZE * 2.5, size * 1.15), cyan);
             } else {
                 clear_fx_start = None;
             }
         }
 
         set_default_camera();
-        draw_hud(&mut game);
+        draw_hud(&game);
 
-        // Draw Line Clear Full-Screen Flash Burst
+        // Draw Layer Clear Full-Screen Flash Burst
         if let Some(start) = clear_fx_start {
             let elapsed = now - start;
             if elapsed < FX_DURATION {
                 let t = (elapsed / FX_DURATION) as f32;
                 let flash_alpha = (1.0 - t) * 0.75;
-                draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(1.0, 0.9, 0.2, flash_alpha));
+                draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(1.0, 0.95, 0.3, flash_alpha));
             }
         }
 
-        // Draw Floating Score Banner
+        // Draw Layer Clear Score Banner
         if let Some((ref msg, start)) = banner_msg {
             let elapsed = now - start;
             if elapsed < 1.2 {
@@ -400,9 +404,10 @@ async fn amain(mut game: Game) {
             }
         }
 
+
         let reset_requested = viewcube.update_and_draw(&mut orbit_cam.yaw, &mut orbit_cam.pitch);
         if reset_requested {
-            orbit_cam = OrbitCamera::default_2d_fancy();
+            orbit_cam = OrbitCamera::default_3d_box();
         }
 
         orbit_cam.update(viewcube.is_dragging);
@@ -411,18 +416,27 @@ async fn amain(mut game: Game) {
     }
 }
 
-fn handle_input(game: &mut Game) -> bool {
-    if is_key_pressed(KeyCode::Left) {
-        game.move_left();
+fn handle_input(game: &mut SpatialGame) -> bool {
+    if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
+        game.move_x(-1);
     }
-    if is_key_pressed(KeyCode::Right) {
-        game.move_right();
+    if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
+        game.move_x(1);
     }
-    if is_key_pressed(KeyCode::Down) {
-        game.soft_drop();
+    if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+        game.move_y(-1);
     }
-    if is_key_pressed(KeyCode::Up) {
-        game.rotate();
+    if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+        game.move_y(1);
+    }
+    if is_key_pressed(KeyCode::X) {
+        game.rotate(Axis::X);
+    }
+    if is_key_pressed(KeyCode::Y) {
+        game.rotate(Axis::Y);
+    }
+    if is_key_pressed(KeyCode::Z) {
+        game.rotate(Axis::Z);
     }
     if is_key_pressed(KeyCode::Space) {
         game.hard_drop();
@@ -437,132 +451,116 @@ fn handle_input(game: &mut Game) -> bool {
     is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape)
 }
 
-fn draw_board(game: &Game) {
-    draw_faint_grid_and_border();
+fn draw_bounding_box_well() {
+    let min_x = ORIGIN_X;
+    let max_x = ORIGIN_X + BOX_WIDTH as f32 * CUBE_SIZE;
+    let min_z = ORIGIN_Z;
+    let max_z = ORIGIN_Z + BOX_DEPTH as f32 * CUBE_SIZE;
+    let floor_y = ORIGIN_Y - BOX_HEIGHT as f32 * CUBE_SIZE;
 
-    for y in 0..HEIGHT as i32 {
-        for x in 0..WIDTH as i32 {
-            if let Some(id) = game.board().cell(x, y) {
-                draw_neon_cell(x, y as f32, id, false);
+    let center_x = (min_x + max_x) / 2.0;
+    let center_y = (floor_y + ORIGIN_Y) / 2.0;
+    let center_z = (min_z + max_z) / 2.0;
+    let box_w = BOX_WIDTH as f32 * CUBE_SIZE;
+    let box_h = BOX_HEIGHT as f32 * CUBE_SIZE;
+    let box_d = BOX_DEPTH as f32 * CUBE_SIZE;
+
+    // Translucent Back Wall (max_z)
+    draw_cube(vec3(center_x, center_y, max_z), vec3(box_w, box_h, 0.04), None, Color::new(0.02, 0.15, 0.35, 0.30));
+    // Translucent Right Side Wall (max_x)
+    draw_cube(vec3(max_x, center_y, center_z), vec3(0.04, box_h, box_d), None, Color::new(0.0, 0.35, 0.65, 0.28));
+    // Translucent Bottom Floor Wall (floor_y)
+    draw_cube(vec3(center_x, floor_y, center_z), vec3(box_w, 0.04, box_d), None, Color::new(0.0, 0.45, 0.85, 0.38));
+
+    for z in 0..=BOX_HEIGHT {
+        let y_pos = ORIGIN_Y - z as f32 * CUBE_SIZE;
+        let color = if z == 0 || z == BOX_HEIGHT {
+            Color::new(0.4, 0.85, 1.0, 0.95)
+        } else {
+            Color::new(0.25, 0.5, 0.8, 0.6)
+        };
+        draw_line_3d(vec3(min_x, y_pos, min_z), vec3(max_x, y_pos, min_z), color);
+        draw_line_3d(vec3(max_x, y_pos, min_z), vec3(max_x, y_pos, max_z), color);
+        draw_line_3d(vec3(max_x, y_pos, max_z), vec3(min_x, y_pos, max_z), color);
+        draw_line_3d(vec3(min_x, y_pos, max_z), vec3(min_x, y_pos, min_z), color);
+    }
+
+    let color_pillars = Color::new(0.3, 0.65, 0.95, 0.8);
+    draw_line_3d(vec3(min_x, ORIGIN_Y, min_z), vec3(min_x, floor_y, min_z), color_pillars);
+    draw_line_3d(vec3(max_x, ORIGIN_Y, min_z), vec3(max_x, floor_y, min_z), color_pillars);
+    draw_line_3d(vec3(max_x, ORIGIN_Y, max_z), vec3(max_x, floor_y, max_z), color_pillars);
+    draw_line_3d(vec3(min_x, ORIGIN_Y, max_z), vec3(min_x, floor_y, max_z), color_pillars);
+}
+
+
+fn draw_spatial_grid(game: &SpatialGame) {
+    for z in 0..BOX_HEIGHT as i8 {
+        for x in 0..BOX_WIDTH as i8 {
+            for y in 0..BOX_DEPTH as i8 {
+                if let Some(id) = game.board.cells[z as usize][x as usize][y as usize] {
+                    draw_neon_cube(x, y, z, id, false);
+                }
             }
         }
     }
 
-    if game.state() != GameState::GameOver {
-        let id = game.active().piece_type.id();
-        let base = game.active();
-        for (x, y) in base.cells() {
-            draw_neon_cell(x, y as f32, id, true);
+    if game.state == GameState::Playing {
+        let color_id = game.active_piece.piece_type.color_id();
+        for (wx, wy, wz) in game.active_piece.world_blocks() {
+            if wz >= 0 && wz < BOX_HEIGHT as i8 {
+                draw_neon_cube(wx, wy, wz, color_id, true);
+            }
         }
     }
 }
 
-fn draw_faint_grid_and_border() {
-    let grid_color = Color::new(0.15, 0.25, 0.45, 0.35);
-    let border_color = Color::new(0.0, 0.85, 1.0, 0.8);
-
-    let left = BOARD_ORIGIN_X;
-    let right = BOARD_ORIGIN_X + WIDTH as f32 * CELL_SIZE;
-    let top = BOARD_ORIGIN_Y;
-    let bottom = BOARD_ORIGIN_Y - HEIGHT as f32 * CELL_SIZE;
-    let center_x = (left + right) / 2.0;
-    let center_y = (top + bottom) / 2.0;
-    let board_w = WIDTH as f32 * CELL_SIZE;
-    let board_h = HEIGHT as f32 * CELL_SIZE;
-
-    // Translucent Back Wall
-    draw_cube(vec3(center_x, center_y, -CELL_SIZE * 0.3), vec3(board_w, board_h, 0.04), None, Color::new(0.02, 0.12, 0.28, 0.35));
-    // Translucent Left Side Wall
-    draw_cube(vec3(left, center_y, 0.0), vec3(0.04, board_h, CELL_SIZE * 0.8), None, Color::new(0.0, 0.4, 0.7, 0.28));
-    // Translucent Right Side Wall
-    draw_cube(vec3(right, center_y, 0.0), vec3(0.04, board_h, CELL_SIZE * 0.8), None, Color::new(0.0, 0.4, 0.7, 0.28));
-    // Translucent Bottom Floor
-    draw_cube(vec3(center_x, bottom, 0.0), vec3(board_w, 0.04, CELL_SIZE * 0.8), None, Color::new(0.0, 0.5, 0.85, 0.38));
-
-    for x in 0..=WIDTH {
-        let gx = BOARD_ORIGIN_X + x as f32 * CELL_SIZE;
-        draw_line_3d(vec3(gx, top, 0.0), vec3(gx, bottom, 0.0), grid_color);
-    }
-    for y in 0..=HEIGHT {
-        let gy = BOARD_ORIGIN_Y - y as f32 * CELL_SIZE;
-        draw_line_3d(vec3(left, gy, 0.0), vec3(right, gy, 0.0), grid_color);
-    }
-
-    draw_line_3d(vec3(left, top, 0.0), vec3(right, top, 0.0), border_color);
-    draw_line_3d(vec3(right, top, 0.0), vec3(right, bottom, 0.0), border_color);
-    draw_line_3d(vec3(right, bottom, 0.0), vec3(left, bottom, 0.0), border_color);
-    draw_line_3d(vec3(left, top, 0.0), vec3(left, bottom, 0.0), border_color);
-}
-
-
-fn draw_neon_cell(x: i32, y: f32, id: u8, is_active: bool) {
-    let pos = cell_world_pos(x, y);
+fn draw_neon_cube(x: i8, y: i8, z: i8, id: u8, is_active: bool) {
+    let pos = block_world_pos(x, y, z);
     let color = piece_color(id);
-    let size = vec3(CELL_SIZE, CELL_SIZE, CELL_SIZE * 0.5);
+    let size = vec3(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
     if is_active {
-        let glow = Color::new(color.r, color.g, color.b, 0.12);
-        draw_cube(pos, vec3(CELL_SIZE * 1.05, CELL_SIZE * 1.05, CELL_SIZE * 0.5), None, glow);
+        let active_fill = Color::new(color.r, color.g, color.b, 0.40);
+        draw_cube(pos, size, None, active_fill);
+        draw_cube_wires(pos, size, Color::new(color.r, color.g, color.b, 0.95));
+    } else {
+        draw_cube(pos, size, None, color);
+        draw_cube_wires(pos, size, WHITE);
     }
-    draw_cube(pos, size, None, color);
-    draw_cube_wires(pos, size, WHITE);
-    draw_cube_wires(pos, vec3(CELL_SIZE * 0.82, CELL_SIZE * 0.82, CELL_SIZE * 0.5), Color::new(0.0, 0.0, 0.0, 0.5));
 }
 
 const HUD_COLOR: Color = Color::new(0.6, 0.95, 1.0, 1.0);
 
-fn draw_hud(game: &mut Game) {
-    draw_next_preview(game);
-    draw_stats(game);
-    draw_controls_legend();
-    draw_status_overlay(game);
-}
+fn draw_hud(game: &SpatialGame) {
+    draw_text("3D SPATIAL BOX TETRIS", 20.0, 30.0, 24.0, HUD_COLOR);
+    draw_text("CAMERA: ViewCube Drag / Mouse Drag / IJKL | Scroll / +/- Zoom | H/C: Home Reset", 20.0, 56.0, 18.0, Color::new(1.0, 0.85, 0.2, 1.0));
 
-fn draw_next_preview(game: &mut Game) {
-    draw_text("NEXT", 20.0, 30.0, 24.0, HUD_COLOR);
-    let next_type = game.peek_next();
-    let color = piece_color(next_type.id());
-    let cell_px = 18.0;
-    let origin_x = 20.0;
-    let origin_y = 40.0;
-    for (x, y) in next_type.cells(0) {
-        let px = origin_x + x as f32 * cell_px;
-        let py = origin_y + y as f32 * cell_px;
-        draw_rectangle(px, py, cell_px - 2.0, cell_px - 2.0, color);
-    }
-}
-
-fn draw_stats(game: &Game) {
     let base_y = screen_height() - 90.0;
-    draw_text(format!("SCORE: {}", game.score()), 20.0, base_y, 24.0, HUD_COLOR);
-    draw_text(format!("LEVEL: {}", game.level()), 20.0, base_y + 28.0, 24.0, HUD_COLOR);
-    draw_text(format!("LINES: {}", game.lines_cleared()), 20.0, base_y + 56.0, 24.0, HUD_COLOR);
-}
+    draw_text(format!("SCORE: {}", game.score), 20.0, base_y, 24.0, HUD_COLOR);
+    draw_text(format!("LEVEL: {}", game.level), 20.0, base_y + 28.0, 24.0, HUD_COLOR);
+    draw_text(format!("LAYERS: {}", game.layers_cleared), 20.0, base_y + 56.0, 24.0, HUD_COLOR);
 
-fn draw_controls_legend() {
     let lines = [
-        "CONTROLS:",
-        "<-/-> move",
-        "Down  soft drop",
-        "Up    rotate",
-        "Space hard drop",
+        "3D CONTROLS:",
+        "Left/Right/A/D  Translate X",
+        "Up/Down/W/S     Translate Y",
+        "X / Y / Z       Rotate 3D Axes",
+        "Space           Hard Drop Z",
         "ViewCube Drag   Orbit 3D Gizmo",
         "Mouse Drag/IJKL Orbit View",
         "Scroll / +/-    Zoom View",
         "H / C           Home Reset View",
-        "P     pause",
-        "R     restart",
-        "Q/Esc quit",
+        "P               Pause",
+        "R               Restart",
+        "Q/Esc           Quit",
     ];
-    let origin_x = screen_width() - 250.0;
+    let origin_x = screen_width() - 260.0;
     for (i, line) in lines.iter().enumerate() {
         draw_text(line, origin_x, 180.0 + i as f32 * 22.0, 18.0, HUD_COLOR);
     }
-}
 
-fn draw_status_overlay(game: &Game) {
     let cx = screen_width() / 2.0;
     let cy = screen_height() / 2.0;
-    match game.state() {
+    match game.state {
         GameState::Paused => {
             let bw = 240.0;
             let bh = 80.0;
@@ -576,13 +574,7 @@ fn draw_status_overlay(game: &Game) {
             draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
             draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.2, 0.3, 1.0));
             draw_text("GAME OVER", cx - 110.0, cy - 20.0, 40.0, Color::new(1.0, 0.2, 0.3, 1.0));
-            draw_text(
-                format!("Final score: {}", game.score()),
-                cx - 100.0,
-                cy + 20.0,
-                24.0,
-                WHITE,
-            );
+            draw_text(format!("Final score: {}", game.score), cx - 100.0, cy + 20.0, 24.0, WHITE);
             draw_text("Press R to restart", cx - 100.0, cy + 50.0, 24.0, HUD_COLOR);
         }
         GameState::Playing => {}

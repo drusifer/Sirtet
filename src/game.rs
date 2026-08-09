@@ -178,8 +178,11 @@ impl Game {
         }
         if !self.try_move(0, 1) {
             self.lock_active();
+        } else {
+            self.last_lines_cleared = 0;
         }
     }
+
 
     fn lock_active(&mut self) {
         let id = self.active.piece_type.id();

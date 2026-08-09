@@ -10,15 +10,14 @@ use crossterm::{cursor, execute, queue};
 
 use crate::cli::RendererChoice;
 
-const OPTIONS: [(RendererChoice, &str); 2] = [
-    (RendererChoice::Terminal, "Terminal (classic ANSI rendering)"),
-    (RendererChoice::Gfx3d, "3D Accelerated (futuristic GPU rendering)"),
+const OPTIONS: [(RendererChoice, &str); 4] = [
+    (RendererChoice::Terminal, "Terminal 2D (Classic ANSI rendering)"),
+    (RendererChoice::Gfx3d, "Fancy GPU 2D (Futuristic GPU rendering)"),
+    (RendererChoice::Terminal3d, "Terminal 3D Box (Isometric ANSI wireframe 3D Tetris)"),
+    (RendererChoice::Gfx3dBox, "Fancy GPU 3D Box (Macroquad GPU 3D spatial Tetris)"),
 ];
 
 /// Shows an interactive startup picker for choosing a renderer.
-///
-/// Returns `Ok(Some(choice))` if the player selected a renderer, or `Ok(None)` if they quit
-/// (Esc/Q) without choosing — the caller should exit cleanly without starting a game.
 pub fn pick_renderer() -> io::Result<Option<RendererChoice>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -60,7 +59,7 @@ fn run(stdout: &mut io::Stdout) -> io::Result<Option<RendererChoice>> {
 
 fn render(stdout: &mut io::Stdout, selected: usize) -> io::Result<()> {
     queue!(stdout, Clear(ClearType::All))?;
-    queue!(stdout, cursor::MoveTo(0, 0), Print("Choose a renderer:"))?;
+    queue!(stdout, cursor::MoveTo(0, 0), Print("Choose a game/renderer mode:"))?;
     for (i, (_, label)) in OPTIONS.iter().enumerate() {
         let marker = if i == selected { "> " } else { "  " };
         queue!(stdout, cursor::MoveTo(0, 2 + i as u16), Print(format!("{marker}{label}")))?;

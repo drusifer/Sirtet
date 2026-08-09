@@ -1,7 +1,7 @@
-.PHONY: build test run release help
+.PHONY: build test run release lint help
 
 help:
-	@echo "targets: build test run release"
+	@echo "targets: build test run release lint"
 
 build:
 	cargo build
@@ -14,3 +14,6 @@ run:
 
 release:
 	cargo build --release
+
+lint:
+	cargo clippy --all-targets

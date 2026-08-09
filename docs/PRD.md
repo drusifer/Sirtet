@@ -103,3 +103,41 @@ Linux GPU/driver setups.
 - Whether the engine/renderer boundary needs a new `Renderer` trait so `main.rs` dispatches
   to either backend while `board`/`piece`/`game` stay unchanged — likely yes, Morpheus
   confirms in the Architecture doc.
+
+---
+
+# Sprint 3 Addendum: Spatial 3D Box Tetris in TUI and Fancy GPU Renderers
+
+**Owner:** Cypher (PM)
+**Status:** Draft for review (Smith Gate 1, 2026-08-08)
+**Date:** 2026-08-08
+
+## Vision
+Expand Sirtet with a true 3D spatial Tetris game mode (classic Mac 3D Tetris / Blockout style) featuring an X x Y x Z rectangular box grid and 3D polycube pieces falling down Z. To maintain our core principle of total renderer parity across platforms, 3D Spatial Tetris will be available in both a Terminal UI (TUI ASCII/ANSI isometric wireframe) renderer and a Fancy GPU 3D renderer.
+
+The complete game suite now offers 4 selectable modes:
+1. 2D Tetris — Terminal (TUI)
+2. 2D Tetris — Fancy GPU 3D
+3. 3D Spatial Box Tetris — Terminal (TUI Isometric Wireframe)
+4. 3D Spatial Box Tetris — Fancy GPU 3D
+
+## Goals (Sprint 3 Scope — IN)
+1. Core 3D Spatial Engine: `SpatialGame` engine handling 3D polycube pieces, 3D grid collision (default 5x5x10 box), 3D movement (X/Y translation), 3D rotation (X, Y, Z axes), Z gravity/drops, and XxY horizontal layer clearing.
+2. Terminal (TUI) Spatial Renderer (`terminal_3d`): Isometric ASCII/ANSI wireframe well representation rendered in terminal with depth cues, piece position indicators, layer indicators, and full HUD parity.
+3. Fancy GPU Spatial Renderer (`3d_box`): GPU-accelerated 3D Macroquad scene rendering the wireframe box well, 3D glowing blocks, smooth motion, and line/layer clear effects.
+4. Universal Launcher & CLI flags: Startup picker updated to 4 options (`1. Terminal 2D`, `2. Fancy GPU 2D`, `3. Terminal 3D Box`, `4. Fancy GPU 3D Box`). CLI `--renderer` supports `terminal`, `3d`, `terminal_3d`, and `3d_box` (with aliases `tui_3d`, `blockout`).
+5. Control & Gameplay Parity: Universal keybindings for 3D translation (Arrows / HJKL / WASD), 3D rotation (X/Y/Z keys), drop (Space), pause (P), restart (R), quit (Q/Esc) across both 3D renderers.
+
+## Explicit Non-Goals (OUT of scope this sprint)
+- Custom user-configurable box dimensions — fixed 5x5x10 box size for engine consistency.
+- Pentacubes or custom piece editor — standard tricubes/tetracubes piece set.
+- Sound effects or music (still out per PRD).
+
+## Success Criteria
+- `cargo run -- --renderer=terminal_3d` launches TUI Spatial 3D Box Tetris.
+- `cargo run -- --renderer=3d_box` launches Fancy GPU Spatial 3D Box Tetris.
+- Interactive startup picker displays all 4 game modes.
+- `SpatialGame` engine is fully unit-tested for 3D collision, 3D rotation, and 3D layer clearing.
+- Terminal 3D mode renders clear isometric box projection and depth cues in ANSI terminal.
+- Fancy GPU 3D mode renders 3D box scene with Macroquad camera and neon 3D blocks.
+

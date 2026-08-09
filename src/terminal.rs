@@ -1,20 +1,21 @@
-use std::io::{self, Write};
+use std::io;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-    LeaveAlternateScreen,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use crossterm::{cursor, execute, queue};
+use crossterm::execute;
+
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::Terminal;
 
 use tetris::board::{HEIGHT, WIDTH};
 use tetris::game::{Game, GameState};
-
-const BOARD_X: u16 = 1;
-const BOARD_Y: u16 = 1;
-const PANEL_X: u16 = BOARD_X + (WIDTH as u16) * 2 + 3;
 
 fn piece_color(id: u8) -> Color {
     match id {
@@ -24,25 +25,30 @@ fn piece_color(id: u8) -> Color {
         4 => Color::Green,
         5 => Color::Red,
         6 => Color::Blue,
-        7 => Color::DarkYellow,
+        7 => Color::Rgb(255, 140, 0),
         _ => Color::White,
     }
 }
 
-/// Runs the classic terminal (crossterm) renderer for the given game until the player quits.
 pub fn run(game: Game) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    let result = run_loop(&mut stdout, game);
+    let result = run_loop(&mut terminal, game);
 
-    execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
     disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
     result
 }
 
-fn run_loop(stdout: &mut io::Stdout, mut game: Game) -> io::Result<()> {
+fn run_loop(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    mut game: Game,
+) -> io::Result<()> {
     let mut last_tick = Instant::now();
 
     loop {
@@ -89,144 +95,219 @@ fn run_loop(stdout: &mut io::Stdout, mut game: Game) -> io::Result<()> {
             last_tick = Instant::now();
         }
 
-        render(stdout, &mut game)?;
+        terminal.draw(|f| ui(f, &mut game))?;
     }
 }
 
-fn render(stdout: &mut io::Stdout, game: &mut Game) -> io::Result<()> {
-    queue!(stdout, Clear(ClearType::All))?;
+fn ui(f: &mut ratatui::Frame, game: &mut Game) {
+    f.render_widget(Block::default().style(Style::default().bg(Color::Black)), f.area());
 
-    draw_border(stdout)?;
-    draw_locked_cells(stdout, game)?;
-    draw_active_piece(stdout, game)?;
-    draw_side_panel(stdout, game)?;
-    draw_controls_legend(stdout)?;
-    draw_status_overlay(stdout, game)?;
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)].as_ref())
+        .split(f.area());
 
-    stdout.flush()
+    draw_board_widget(f, chunks[0], game);
+    draw_side_panel_widget(f, chunks[1], game);
+    draw_status_overlay_widget(f, f.area(), game);
 }
 
-fn draw_border(stdout: &mut io::Stdout) -> io::Result<()> {
-    let w = (WIDTH as u16) * 2;
-    queue!(stdout, cursor::MoveTo(BOARD_X - 1, BOARD_Y - 1))?;
-    queue!(stdout, Print("+"), Print("-".repeat(w as usize)), Print("+"))?;
-    for y in 0..HEIGHT as u16 {
-        queue!(stdout, cursor::MoveTo(BOARD_X - 1, BOARD_Y + y))?;
-        queue!(stdout, Print("|"))?;
-        queue!(stdout, cursor::MoveTo(BOARD_X + w, BOARD_Y + y))?;
-        queue!(stdout, Print("|"))?;
-    }
-    queue!(stdout, cursor::MoveTo(BOARD_X - 1, BOARD_Y + HEIGHT as u16))?;
-    queue!(stdout, Print("+"), Print("-".repeat(w as usize)), Print("+"))?;
-    Ok(())
-}
+fn draw_board_widget(f: &mut ratatui::Frame, area: Rect, game: &Game) {
+    let active_cells = if game.state() != GameState::GameOver {
+        game.active().cells().to_vec()
+    } else {
+        vec![]
+    };
+    let active_id = game.active().piece_type.id();
 
-fn draw_cell(stdout: &mut io::Stdout, x: i32, y: i32, id: u8) -> io::Result<()> {
-    if x < 0 || y < 0 || x as usize >= WIDTH || y as usize >= HEIGHT {
-        return Ok(());
-    }
-    let screen_x = BOARD_X + (x as u16) * 2;
-    let screen_y = BOARD_Y + y as u16;
-    queue!(stdout, cursor::MoveTo(screen_x, screen_y))?;
-    queue!(stdout, SetForegroundColor(piece_color(id)), Print("[]"), ResetColor)?;
-    Ok(())
-}
+    let avail_height = area.height.saturating_sub(2) as usize;
+    let avail_width = area.width.saturating_sub(2) as usize;
 
-fn draw_locked_cells(stdout: &mut io::Stdout, game: &Game) -> io::Result<()> {
+    let k_height = avail_height / HEIGHT;
+    let k_width = avail_width / (WIDTH * 2);
+    let scale_k = k_height.min(k_width).max(1);
+
+    let empty_dot_str = " ".repeat(2 * scale_k);
+
+    let mut lines = Vec::with_capacity(HEIGHT * scale_k);
+
     for y in 0..HEIGHT as i32 {
-        for x in 0..WIDTH as i32 {
-            if let Some(id) = game.board().cell(x, y) {
-                draw_cell(stdout, x, y, id)?;
+        if scale_k == 1 {
+            let mut spans = Vec::with_capacity(WIDTH);
+            for x in 0..WIDTH as i32 {
+                if let Some(id) = game.board().cell(x, y) {
+                    spans.push(Span::styled("[#]", Style::default().fg(piece_color(id)).bg(Color::Black)));
+                } else if active_cells.contains(&(x, y)) {
+                    spans.push(Span::styled("[#]", Style::default().fg(piece_color(active_id)).bg(Color::Black)));
+                } else {
+                    spans.push(Span::styled("  ", Style::default().fg(Color::DarkGray).bg(Color::Black)));
+                }
+            }
+            lines.push(Line::from(spans));
+        } else {
+            // Multi-line block with crisp border lines around each block
+            let inner_w = 2 * scale_k - 2;
+            let top_bot_block = format!("[{}]", "═".repeat(inner_w));
+            let mid_block = format!("║{}║", "█".repeat(inner_w));
+
+            // Sub-row 0 (top line)
+            let mut spans_top = Vec::with_capacity(WIDTH);
+            for x in 0..WIDTH as i32 {
+                if let Some(id) = game.board().cell(x, y) {
+                    spans_top.push(Span::styled(top_bot_block.clone(), Style::default().fg(piece_color(id)).bg(Color::Black)));
+                } else if active_cells.contains(&(x, y)) {
+                    spans_top.push(Span::styled(top_bot_block.clone(), Style::default().fg(piece_color(active_id)).bg(Color::Black)));
+                } else {
+                    spans_top.push(Span::styled(empty_dot_str.clone(), Style::default().fg(Color::DarkGray).bg(Color::Black)));
+                }
+            }
+            lines.push(Line::from(spans_top));
+
+            // Sub-rows 1..scale_k-1 (middle filled lines)
+            for sub in 1..scale_k {
+                let mut spans_mid = Vec::with_capacity(WIDTH);
+                let current_block = if sub == scale_k - 1 {
+                    top_bot_block.clone()
+                } else {
+                    mid_block.clone()
+                };
+                for x in 0..WIDTH as i32 {
+                    if let Some(id) = game.board().cell(x, y) {
+                        spans_mid.push(Span::styled(current_block.clone(), Style::default().fg(piece_color(id)).bg(Color::Black)));
+                    } else if active_cells.contains(&(x, y)) {
+                        spans_mid.push(Span::styled(current_block.clone(), Style::default().fg(piece_color(active_id)).bg(Color::Black)));
+                    } else {
+                        spans_mid.push(Span::styled(empty_dot_str.clone(), Style::default().fg(Color::DarkGray).bg(Color::Black)));
+                    }
+                }
+                lines.push(Line::from(spans_mid));
             }
         }
     }
-    Ok(())
+
+    let board_width = (WIDTH * 2 * scale_k + 2) as u16;
+    let board_height = (HEIGHT * scale_k + 2) as u16;
+    let board_area = Rect {
+        x: area.x + area.width.saturating_sub(board_width) / 2,
+        y: area.y + area.height.saturating_sub(board_height) / 2,
+        width: board_width.min(area.width),
+        height: board_height.min(area.height),
+    };
+
+    let board_paragraph = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title(" 2D Classic Tetris "))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(board_paragraph, board_area);
 }
 
-fn draw_active_piece(stdout: &mut io::Stdout, game: &Game) -> io::Result<()> {
-    if game.state() == GameState::GameOver {
-        return Ok(());
-    }
-    let id = game.active().piece_type.id();
-    for (x, y) in game.active().cells() {
-        draw_cell(stdout, x, y, id)?;
-    }
-    Ok(())
-}
 
-fn draw_side_panel(stdout: &mut io::Stdout, game: &mut Game) -> io::Result<()> {
-    let mut row = BOARD_Y;
-    queue!(stdout, cursor::MoveTo(PANEL_X, row), Print("NEXT:"))?;
-    row += 1;
+
+
+fn draw_side_panel_widget(f: &mut ratatui::Frame, area: Rect, game: &mut Game) {
     let next_type = game.peek_next();
-    for (x, y) in next_type.cells(0) {
-        let screen_x = PANEL_X + (x as u16) * 2;
-        let screen_y = row + y as u16;
-        queue!(stdout, cursor::MoveTo(screen_x, screen_y))?;
-        queue!(
-            stdout,
-            SetForegroundColor(piece_color(next_type.id())),
-            Print("[]"),
-            ResetColor
-        )?;
+    let next_cells = next_type.cells(0).to_vec();
+    let next_id = next_type.id();
+
+    let block_str = "[]";
+    let empty_str = "  ";
+
+    let mut next_lines = Vec::with_capacity(4);
+    for py in 0..4i32 {
+        let mut spans = Vec::with_capacity(4);
+        for px in 0..4i32 {
+            if next_cells.contains(&(px, py)) {
+                spans.push(Span::styled(block_str, Style::default().fg(piece_color(next_id)).bg(Color::Black)));
+            } else {
+                spans.push(Span::styled(empty_str, Style::default().bg(Color::Black)));
+            }
+        }
+        next_lines.push(Line::from(spans));
     }
-    row += 5;
 
-    queue!(stdout, cursor::MoveTo(PANEL_X, row), Print(format!("SCORE: {}", game.score())))?;
-    row += 1;
-    queue!(stdout, cursor::MoveTo(PANEL_X, row), Print(format!("LEVEL: {}", game.level())))?;
-    row += 1;
-    queue!(stdout, cursor::MoveTo(PANEL_X, row), Print(format!("LINES: {}", game.lines_cleared())))?;
-    Ok(())
-}
+    let side_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7), // Next preview block
+            Constraint::Length(5), // Stats block
+            Constraint::Min(8),   // Controls legend
+        ])
+        .split(area);
 
-/// Row where the score panel ends, so the controls legend can start below it without
-/// overlapping (score panel: NEXT label + 4-row preview + SCORE/LEVEL/LINES = 10 rows).
-const SIDE_PANEL_HEIGHT: u16 = 10;
+    let next_widget = Paragraph::new(next_lines)
+        .block(Block::default().borders(Borders::ALL).title(" NEXT "))
+        .style(Style::default().bg(Color::Black));
+    f.render_widget(next_widget, side_chunks[0]);
 
-fn draw_controls_legend(stdout: &mut io::Stdout) -> io::Result<()> {
-    let lines = [
-        "CONTROLS:",
-        "<-/-> move",
-        "Down  soft drop",
-        "Up    rotate",
-        "Space hard drop",
-        "P     pause",
-        "R     restart",
-        "Q/Esc quit",
+    let stats_text = vec![
+        Line::from(format!("SCORE : {}", game.score())),
+        Line::from(format!("LEVEL : {}", game.level())),
+        Line::from(format!("LINES : {}", game.lines_cleared())),
     ];
-    let start_row = BOARD_Y + SIDE_PANEL_HEIGHT + 1;
-    for (i, line) in lines.iter().enumerate() {
-        queue!(stdout, cursor::MoveTo(PANEL_X, start_row + i as u16), Print(*line))?;
-    }
-    Ok(())
+    let stats_widget = Paragraph::new(stats_text)
+        .block(Block::default().borders(Borders::ALL).title(" Stats "))
+        .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+    f.render_widget(stats_widget, side_chunks[1]);
+
+    let controls_text = vec![
+        Line::from("CONTROLS:"),
+        Line::from("Left / Right : Move"),
+        Line::from("Down         : Soft Drop"),
+        Line::from("Up           : Rotate"),
+        Line::from("Space        : Hard Drop"),
+        Line::from("P            : Pause"),
+        Line::from("R            : Restart"),
+        Line::from("Q / Esc      : Quit"),
+    ];
+    let controls_widget = Paragraph::new(controls_text)
+        .block(Block::default().borders(Borders::ALL).title(" Controls "))
+        .style(Style::default().fg(Color::Yellow).bg(Color::Black));
+    f.render_widget(controls_widget, side_chunks[2]);
 }
 
-fn draw_status_overlay(stdout: &mut io::Stdout, game: &Game) -> io::Result<()> {
-    let center_x = BOARD_X + (WIDTH as u16);
-    let center_y = BOARD_Y + (HEIGHT as u16) / 2;
+fn draw_status_overlay_widget(f: &mut ratatui::Frame, area: Rect, game: &Game) {
     match game.state() {
         GameState::Paused => {
-            queue!(stdout, cursor::MoveTo(center_x.saturating_sub(3), center_y), Print("PAUSED"))?;
+            let popup = Paragraph::new("\n  *** PAUSED ***\n  Press P to resume")
+                .block(Block::default().borders(Borders::ALL).title(" Status "))
+                .style(Style::default().fg(Color::Yellow).bg(Color::Black).add_modifier(Modifier::BOLD));
+            let popup_area = centered_rect(area, 40, 20);
+            f.render_widget(Clear, popup_area);
+            f.render_widget(popup, popup_area);
         }
         GameState::GameOver => {
-            queue!(
-                stdout,
-                cursor::MoveTo(center_x.saturating_sub(5), center_y),
-                Print("GAME OVER")
-            )?;
-            queue!(
-                stdout,
-                cursor::MoveTo(center_x.saturating_sub(9), center_y + 1),
-                Print(format!("Final score: {}", game.score()))
-            )?;
-            queue!(
-                stdout,
-                cursor::MoveTo(center_x.saturating_sub(8), center_y + 2),
-                Print("Press R to restart")
-            )?;
+            let msg = format!(
+                "\n   *** GAME OVER ***\n   Final Score: {}\n   Press R to restart",
+                game.score()
+            );
+            let popup = Paragraph::new(msg)
+                .block(Block::default().borders(Borders::ALL).title(" Game Over "))
+                .style(Style::default().fg(Color::Red).bg(Color::Black).add_modifier(Modifier::BOLD));
+            let popup_area = centered_rect(area, 45, 25);
+            f.render_widget(Clear, popup_area);
+            f.render_widget(popup, popup_area);
         }
         GameState::Playing => {}
     }
-    Ok(())
+}
+
+
+fn centered_rect(r: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }

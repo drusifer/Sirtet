@@ -164,3 +164,55 @@ keybind-config — still separately open, not part of Sprint 2.)
   decision #8's chosen scope). Still accurate, not affected by the Wayland fix.
 - The `catch_unwind` fallback (US-13) covers the whole 3D session, not just init — see the
   Phase 6.1 scope note above. Still accurate.
+
+---
+
+# Sprint 3 — Spatial 3D Box Tetris (TUI & Fancy GPU Modes)
+
+**Status:** Phase 1 ready — ARCHITECTURE.md + USER_STORIES.md approved (both gates cleared).
+**Date:** 2026-08-08
+
+Gates cleared: Smith Gate 1 (stories US-15..US-20 approved) + Gate 2 (architecture approved).
+Cycle per phase: Neo implements (TDD) -> Trin UAT -> Morpheus review -> next phase.
+
+## Phase 1 — Core 3D Spatial Engine & Polycubes (`src/spatial_game.rs`)
+- [x] 1.1 `src/spatial_game.rs`: 5x5x10 3D spatial grid, `SpatialBoard`, `SpatialPiece` (3D polycube shapes), 3D pitch/yaw/roll rotations, 3D boundary collision
+- [x] 1.2 `SpatialGame`: Z-gravity tick, 3D translation (X/Y), 3D rotations (X/Y/Z), soft/hard drop down Z, lock-on-landing
+- [x] 1.3 Unit tests for 3D collision, 3D rotations, piece spawning, and movement (covering `spatial_game.rs` pure engine logic)
+**Stories:** US-16, US-17
+
+
+## Phase 2 — 3D Layer Clears & Scoring
+- [x] 2.1 3D Layer clear detection (filling 5x5=25 cells at Z level) + shift down Z + exponential scoring scale (100/300/600/1000 x level)
+- [x] 2.2 Unit tests: single, double, multi-layer clears, score increment, level progression
+**Stories:** US-18
+
+
+## Phase 3 — CLI Parser & 4-Way Startup Picker
+- [x] 3.1 Expand `RendererChoice` enum and CLI parsing in `src/cli.rs` (`terminal`, `3d`, `terminal_3d`, `3d_box`)
+- [x] 3.2 Update `src/picker.rs` to display 4 menu options with Up/Down + Enter nav & Esc/Q quit
+- [x] 3.3 Unit tests for CLI parsing + manual PTY smoke test for 4-way picker
+**Stories:** US-15
+
+
+## Phase 4 — Terminal (TUI) 3D Box Renderer (`src/terminal_3d.rs`)
+- [x] 4.1 `src/terminal_3d.rs`: Crossterm isometric ANSI wireframe well renderer with depth shading & block representation
+- [x] 4.2 HUD overlay (Score, Level, Layers Cleared, Next Piece, 3D Control Legend)
+- [x] 4.3 Manual PTY smoke test of TUI Spatial 3D Box mode (`cargo run -- --renderer=terminal_3d`)
+**Stories:** US-19
+
+
+## Phase 5 — Fancy GPU 3D Box Renderer (`src/gfx3d_box.rs`)
+- [x] 5.1 `src/gfx3d_box.rs`: Macroquad 3D viewport setup (`Camera3D`), wireframe well lines (`draw_line_3d`), 3D glowing polycube blocks (`draw_cube`)
+- [x] 5.2 3D motion interpolation, layer clear flash effect, and HUD overlay
+- [x] 5.3 Init fallback wrapping (`catch_unwind` falling back to `terminal_3d`)
+- [x] 5.4 Manual smoke test of Fancy GPU 3D Box mode (`cargo run -- --renderer=3d_box`)
+**Stories:** US-20
+
+
+## Phase 6 — Integration & Final Verification
+- [x] 6.1 Full test suite pass (`cargo test`) covering engine + CLI parser + spatial engine tests (46/46 tests)
+- [x] 6.2 Clean build (`cargo build --release`) and clippy check (`cargo clippy --all-targets` via `bobp make lint`)
+**Stories:** cross-cutting final verification
+
+

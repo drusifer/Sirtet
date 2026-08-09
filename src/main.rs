@@ -1,12 +1,15 @@
 mod cli;
 mod gfx3d;
+mod gfx3d_box;
 mod picker;
 mod terminal;
+mod terminal_3d;
 
 use std::process::ExitCode;
 
 use cli::RendererChoice;
 use tetris::game::Game;
+use tetris::spatial_game::SpatialGame;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -34,6 +37,8 @@ fn main() -> ExitCode {
     match choice {
         RendererChoice::Terminal => run_terminal(),
         RendererChoice::Gfx3d => run_gfx3d_with_fallback(),
+        RendererChoice::Terminal3d => run_terminal_3d(),
+        RendererChoice::Gfx3dBox => run_gfx3d_box_with_fallback(),
     }
 }
 
@@ -47,11 +52,6 @@ fn run_terminal() -> ExitCode {
     }
 }
 
-/// Attempts the 3D renderer; on any failure (GPU/window init, per US-13 — macroquad reports
-/// this via panic rather than a `Result`, so `catch_unwind` is the only interception point
-/// available, per ARCHITECTURE.md decision #9) falls back to terminal mode instead of
-/// crashing. The default panic hook is suppressed for the duration so the player sees the
-/// one-line fallback message instead of a raw panic/backtrace dump.
 fn run_gfx3d_with_fallback() -> ExitCode {
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -65,6 +65,33 @@ fn run_gfx3d_with_fallback() -> ExitCode {
         Err(_) => {
             eprintln!("3D rendering unavailable on this system — starting terminal mode instead.");
             run_terminal()
+        }
+    }
+}
+
+fn run_terminal_3d() -> ExitCode {
+    match terminal_3d::run(SpatialGame::new()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_gfx3d_box_with_fallback() -> ExitCode {
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        gfx3d_box::run(SpatialGame::new());
+    }));
+    std::panic::set_hook(prev_hook);
+
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(_) => {
+            eprintln!("3D Box rendering unavailable on this system — starting terminal 3D mode instead.");
+            run_terminal_3d()
         }
     }
 }

@@ -129,3 +129,40 @@ route around XWayland entirely. Confirmed fixed on the reporting user's real har
 including full keyboard input working correctly through the native Wayland path.
 - Confirm scoping catch_unwind to init-only (not full session) is the right boundary for
   US-13, given it means a genuine mid-game 3D crash is *not* auto-caught by this mechanism.
+
+---
+
+# Sprint 3 Addendum: Spatial 3D Box Tetris (TUI & Fancy GPU Renderers)
+
+**Owner:** Morpheus (Tech Lead)
+**Status:** Draft for Smith Gate 2 review
+**Date:** 2026-08-08
+
+## Decision Summary
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | Dedicated pure engine module: `src/spatial_game.rs` | 3D Spatial Tetris requires a 3D box grid (5x5x10, X=width, Y=depth, Z=height) and 3D polycube pieces. Splitting logic into `spatial_game.rs` keeps 2D Tetris (`game.rs`/`board.rs`) 100% untouched while keeping the 3D spatial engine pure logic (zero I/O), fully unit-testable via `cargo test`. |
+| 2 | 3D Rotation matrices (Pitch X, Yaw Y, Roll Z) | Polycubes rotate 90 degrees around X, Y, or Z axes. Rotation matrices transform block local coordinates `(x, y, z)`. Collisions against 5x5x10 bounds (`0<=x<5`, `0<=y<5`, `0<=z<10`) and existing locked blocks reject illegal rotations. |
+| 3 | Horizontal XxY Layer Clearing | When all 5x5=25 cells at a given Z depth level are occupied by locked blocks, that Z layer clears. All layers above (smaller Z) shift down Z by 1. Score scales exponentially for multi-layer clears (1=100xL, 2=300xL, 3=600xL, 4=1000xL). |
+| 4 | Terminal TUI 3D Box Renderer (`src/terminal_3d.rs`) | Crossterm-based isometric wireframe well rendering. Draws the 5x5x10 box outline using ANSI characters (`/`, `\`, `|`, `-`, `+`) with depth shading and layer indicators. Provides TUI playability without requiring a GPU display. |
+| 5 | Fancy GPU 3D Box Renderer (`src/gfx3d_box.rs`) | Macroquad 3D scene using `Camera3D` positioned at a top-3/4 angle looking into the 5x5x10 well. Bounding well drawn with 3D wireframe lines (`draw_line_3d`); blocks drawn as colored 3D cubes (`draw_cube`). Smooth motion interpolation and layer-clear flash effects included. |
+| 6 | Launcher & CLI expansion to 4 modes | `RendererChoice` enum updated: `Terminal` (`terminal`), `Gfx3d` (`3d`), `Terminal3d` (`terminal_3d` / `tui_3d`), `Gfx3dBox` (`3d_box` / `blockout`). Picker UI in `picker.rs` updated to display all 4 options. |
+| 7 | Fallback path for GPU 3D Box | Reuses `catch_unwind` pattern (from Sprint 2 Decision #9): if `gfx3d_box` GPU init fails, prints error message and falls back gracefully to `terminal_3d` renderer. |
+
+## Module Layout (Sprint 3 additions)
+
+```
+src/
+  lib.rs            — + pub mod spatial_game;
+  spatial_game.rs   — NEW: SpatialGame, SpatialPiece, SpatialBoard (5x5x10 3D grid, 3D polycubes, 3D rotations, layer clears, pure logic)
+  terminal_3d.rs    — NEW: Crossterm isometric wireframe 3D box renderer. `pub fn run(game: SpatialGame) -> ExitCode`
+  gfx3d_box.rs      — NEW: Macroquad 3D spatial viewport renderer. `pub fn run(game: SpatialGame) -> ExitCode`
+  cli.rs            — Updated: supports terminal, 3d, terminal_3d, 3d_box CLI flags
+  picker.rs         — Updated: 4-option startup selector
+  main.rs           — Updated: routes 4 choices to respective backend run functions
+```
+
+## Testability
+`spatial_game.rs` is 100% pure engine logic — covered by comprehensive unit tests (`cargo test`) for 3D piece spawning, 3D translation/rotation, 3D boundary & stack collision, and 3D layer clearing. Renderers `terminal_3d.rs` and `gfx3d_box.rs` are thin I/O adapters tested via UAT.
+
