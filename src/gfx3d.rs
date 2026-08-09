@@ -1,239 +1,13 @@
 use macroquad::prelude::*;
 
 use tetris::board::{HEIGHT, WIDTH};
+use tetris::camera::{OrbitCamera, ViewCubeGizmo};
+use tetris::fx::{format_clear_banner, ClearFx, LandingFx, ScoreBanner, FX_DURATION};
 use tetris::game::{Game, GameState};
 
 const CELL_SIZE: f32 = 0.5;
 const BOARD_ORIGIN_X: f32 = -(WIDTH as f32 * CELL_SIZE) / 2.0;
 const BOARD_ORIGIN_Y: f32 = (HEIGHT as f32 * CELL_SIZE) / 2.0;
-
-const FX_DURATION: f64 = 0.5;
-
-struct OrbitCamera {
-    yaw: f32,
-    pitch: f32,
-    distance: f32,
-    target: Vec3,
-    shake_intensity: f32,
-}
-
-impl OrbitCamera {
-    fn default_2d_fancy() -> Self {
-        Self {
-            yaw: 0.0,
-            pitch: 0.12,
-            distance: 13.0,
-            target: vec3(0.0, -0.5, 0.0),
-            shake_intensity: 0.0,
-        }
-    }
-
-    fn add_shake(&mut self, intensity: f32) {
-        self.shake_intensity = (self.shake_intensity + intensity).min(1.0);
-    }
-
-    fn update(&mut self, gizmo_handled: bool) {
-        if self.shake_intensity > 0.0 {
-            self.shake_intensity = (self.shake_intensity - 0.04).max(0.0);
-        }
-
-        if !gizmo_handled && (is_mouse_button_down(MouseButton::Right) || is_mouse_button_down(MouseButton::Left)) {
-            let delta = mouse_delta_position();
-            self.yaw += delta.x * 3.5;
-            self.pitch = (self.pitch + delta.y * 3.5).clamp(-1.4, 1.4);
-        }
-
-        if is_key_down(KeyCode::J) { self.yaw -= 0.04; }
-        if is_key_down(KeyCode::L) { self.yaw += 0.04; }
-        if is_key_down(KeyCode::I) { self.pitch = (self.pitch + 0.04).clamp(-1.4, 1.4); }
-        if is_key_down(KeyCode::K) { self.pitch = (self.pitch - 0.04).clamp(-1.4, 1.4); }
-
-        let wheel = mouse_wheel().1;
-        if wheel != 0.0 {
-            self.distance = (self.distance - wheel * 0.8).clamp(4.0, 30.0);
-        }
-        if is_key_down(KeyCode::Equal) { self.distance = (self.distance - 0.2).max(4.0); }
-        if is_key_down(KeyCode::Minus) { self.distance = (self.distance + 0.2).min(30.0); }
-
-        if is_key_pressed(KeyCode::C) {
-            *self = Self::default_2d_fancy();
-        }
-    }
-
-    fn camera_3d(&self) -> Camera3D {
-        let shake_offset = if self.shake_intensity > 0.0 {
-            vec3(
-                rand::gen_range(-0.18, 0.18) * self.shake_intensity,
-                rand::gen_range(-0.18, 0.18) * self.shake_intensity,
-                rand::gen_range(-0.18, 0.18) * self.shake_intensity,
-            )
-        } else {
-            vec3(0.0, 0.0, 0.0)
-        };
-
-        let x = self.target.x + self.distance * self.pitch.cos() * self.yaw.sin() + shake_offset.x;
-        let y = self.target.y + self.distance * self.pitch.sin() + shake_offset.y;
-        let z = self.target.z + self.distance * self.pitch.cos() * self.yaw.cos() + shake_offset.z;
-        Camera3D {
-            position: vec3(x, y, z),
-            target: self.target + shake_offset,
-            up: vec3(0.0, 1.0, 0.0),
-            ..Default::default()
-        }
-    }
-}
-
-struct ViewCubeGizmo {
-    center: Vec2,
-    radius: f32,
-    is_dragging: bool,
-    drag_start_mouse: Vec2,
-    drag_start_yaw: f32,
-    drag_start_pitch: f32,
-}
-
-impl ViewCubeGizmo {
-    fn new() -> Self {
-        Self {
-            center: vec2(0.0, 0.0),
-            radius: 45.0,
-            is_dragging: false,
-            drag_start_mouse: vec2(0.0, 0.0),
-            drag_start_yaw: 0.0,
-            drag_start_pitch: 0.12,
-        }
-    }
-
-    fn update_and_draw(&mut self, yaw: &mut f32, pitch: &mut f32) -> bool {
-        let cx = screen_width() - 80.0;
-        let cy = 80.0;
-        self.center = vec2(cx, cy);
-
-        let mouse_pos = vec2(mouse_position().0, mouse_position().1);
-        let dist_to_center = (mouse_pos - self.center).length();
-        let is_hovered = dist_to_center <= self.radius + 10.0;
-
-        if is_mouse_button_pressed(MouseButton::Left) && is_hovered {
-            self.is_dragging = true;
-            self.drag_start_mouse = mouse_pos;
-            self.drag_start_yaw = *yaw;
-            self.drag_start_pitch = *pitch;
-        }
-
-        if is_mouse_button_down(MouseButton::Left) && self.is_dragging {
-            let delta = mouse_pos - self.drag_start_mouse;
-            *yaw = self.drag_start_yaw + delta.x * 0.03;
-            *pitch = (self.drag_start_pitch + delta.y * 0.03).clamp(-1.4, 1.4);
-        } else if !is_mouse_button_down(MouseButton::Left) {
-            self.is_dragging = false;
-        }
-
-        self.draw_viewcube(*yaw, *pitch, is_hovered);
-
-        let home_center = vec2(cx, cy + 65.0);
-        let dist_home = (mouse_pos - home_center).length();
-        let is_home_hovered = dist_home <= 18.0;
-
-        let home_bg = if is_home_hovered {
-            Color::new(0.3, 0.7, 1.0, 0.9)
-        } else {
-            Color::new(0.15, 0.15, 0.25, 0.8)
-        };
-        draw_circle(home_center.x, home_center.y, 18.0, home_bg);
-        draw_circle_lines(home_center.x, home_center.y, 18.0, 2.0, WHITE);
-        draw_text("H", home_center.x - 5.0, home_center.y + 5.0, 16.0, WHITE);
-
-        let reset_requested = is_mouse_button_pressed(MouseButton::Left) && is_home_hovered;
-        reset_requested || self.is_dragging || is_hovered
-    }
-
-    fn draw_viewcube(&self, yaw: f32, pitch: f32, is_hovered: bool) {
-        let cx = self.center.x;
-        let cy = self.center.y;
-        let scale = 30.0;
-
-        let halo_color = if is_hovered || self.is_dragging {
-            Color::new(0.0, 0.85, 1.0, 0.35)
-        } else {
-            Color::new(0.2, 0.2, 0.3, 0.2)
-        };
-        draw_circle(cx, cy, self.radius + 6.0, halo_color);
-
-        let cube_verts: [(f32, f32, f32); 8] = [
-            (-1.0, -1.0, -1.0),
-            ( 1.0, -1.0, -1.0),
-            ( 1.0,  1.0, -1.0),
-            (-1.0,  1.0, -1.0),
-            (-1.0, -1.0,  1.0),
-            ( 1.0, -1.0,  1.0),
-            ( 1.0,  1.0,  1.0),
-            (-1.0,  1.0,  1.0),
-        ];
-
-        let mut proj_2d = [(0.0f32, 0.0f32, 0.0f32); 8];
-        for (i, &(vx, vy, vz)) in cube_verts.iter().enumerate() {
-            let (rx, ry, rz) = rotate_gizmo_vertex(vx, vy, vz, yaw, pitch);
-            proj_2d[i] = (cx + rx * scale, cy - ry * scale, rz);
-        }
-
-        let faces: [([usize; 4], &str); 6] = [
-            ([4, 5, 6, 7], "FRONT"),
-            ([1, 0, 3, 2], "BACK"),
-            ([0, 4, 7, 3], "LEFT"),
-            ([5, 1, 2, 6], "RIGHT"),
-            ([3, 2, 6, 7], "TOP"),
-            ([0, 1, 5, 4], "BOT"),
-        ];
-
-        let mut face_order: Vec<(usize, f32)> = Vec::new();
-        for (idx, (v_indices, _)) in faces.iter().enumerate() {
-            let avg_z: f32 = v_indices.iter().map(|&v| proj_2d[v].2).sum::<f32>() / 4.0;
-            face_order.push((idx, avg_z));
-        }
-        face_order.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-        for &(idx, avg_z) in &face_order {
-            if avg_z <= 0.0 { continue; }
-
-            let (v_indices, label) = &faces[idx];
-            let p0 = vec2(proj_2d[v_indices[0]].0, proj_2d[v_indices[0]].1);
-            let p1 = vec2(proj_2d[v_indices[1]].0, proj_2d[v_indices[1]].1);
-            let p2 = vec2(proj_2d[v_indices[2]].0, proj_2d[v_indices[2]].1);
-            let p3 = vec2(proj_2d[v_indices[3]].0, proj_2d[v_indices[3]].1);
-
-            let face_bg = match *label {
-                "TOP" => Color::new(0.85, 0.85, 0.9, 0.92),
-                "FRONT" => Color::new(0.75, 0.78, 0.85, 0.92),
-                "RIGHT" | "LEFT" => Color::new(0.65, 0.68, 0.75, 0.92),
-                _ => Color::new(0.55, 0.58, 0.65, 0.92),
-            };
-
-            draw_triangle(p0, p1, p2, face_bg);
-            draw_triangle(p0, p2, p3, face_bg);
-
-            let line_color = Color::new(0.1, 0.15, 0.25, 0.95);
-            draw_line(p0.x, p0.y, p1.x, p1.y, 2.0, line_color);
-            draw_line(p1.x, p1.y, p2.x, p2.y, 2.0, line_color);
-            draw_line(p2.x, p2.y, p3.x, p3.y, 2.0, line_color);
-            draw_line(p3.x, p3.y, p0.x, p0.y, 2.0, line_color);
-
-            let fc = (p0 + p1 + p2 + p3) / 4.0;
-            draw_text(label, fc.x - 12.0, fc.y + 4.0, 11.0, Color::new(0.05, 0.08, 0.15, 1.0));
-        }
-    }
-}
-
-fn rotate_gizmo_vertex(vx: f32, vy: f32, vz: f32, yaw: f32, pitch: f32) -> (f32, f32, f32) {
-    let x1 = vx * yaw.cos() - vz * yaw.sin();
-    let z1 = vx * yaw.sin() + vz * yaw.cos();
-    let y1 = vy;
-
-    let y2 = y1 * pitch.cos() - z1 * pitch.sin();
-    let z2 = y1 * pitch.sin() + z1 * pitch.cos();
-    let x2 = x1;
-
-    (x2, y2, z2)
-}
 
 fn piece_color(id: u8) -> Color {
     match id {
@@ -275,15 +49,14 @@ pub fn run(game: Game) {
 
 async fn amain(mut game: Game) {
     let mut orbit_cam = OrbitCamera::default_2d_fancy();
-    let mut viewcube = ViewCubeGizmo::new();
+    let mut viewcube = ViewCubeGizmo::new(0.12);
     let mut last_tick = get_time();
 
-    let mut land_fx_start: Option<f64> = None;
-    let mut clear_fx_start: Option<f64> = None;
+    let mut landing_fx = LandingFx::new();
+    let mut clear_fx = ClearFx::new();
+    let mut banner = ScoreBanner::new();
+
     let mut prev_active_y = game.active().y;
-
-
-    let mut banner_msg: Option<(String, f64)> = None;
 
     loop {
         let now = get_time();
@@ -301,30 +74,23 @@ async fn amain(mut game: Game) {
             game.tick();
             last_tick = now;
 
-            // Detect genuine piece lock landing (piece locked and new piece spawned at top y=0)
+            // Detect genuine piece lock landing
             if game.active().y < prev_active_y {
-                land_fx_start = Some(now);
+                landing_fx.trigger(now);
                 orbit_cam.add_shake(0.35);
             }
         }
         prev_active_y = game.active().y;
 
-        // Detect line clear event immediately on lock (hard drop or gravity tick)
+        // Detect line clear event immediately on lock
         let cleared = game.last_lines_cleared();
-        if cleared > 0 && clear_fx_start.is_none() {
-            clear_fx_start = Some(now);
+        if cleared > 0 && clear_fx.start_time.is_none() {
+            clear_fx.trigger(now, cleared);
             orbit_cam.add_shake(0.85);
 
-            let msg = match cleared {
-                1 => "SINGLE LINE CLEAR! +100",
-                2 => "DOUBLE LINE CLEAR! +300",
-                3 => "TRIPLE LINE CLEAR! +500",
-                _ => "💥 TETRIS LINE CLEAR! +800",
-            };
-            banner_msg = Some((msg.to_string(), now));
+            let msg = format_clear_banner(cleared, false);
+            banner.trigger(msg.to_string(), now);
         }
-
-
 
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
 
@@ -332,25 +98,10 @@ async fn amain(mut game: Game) {
         draw_board(&game);
 
         // Draw 3D Landing shockwave pulses on 2D board
-        if let Some(start) = land_fx_start {
-            let elapsed = now - start;
-            if elapsed < FX_DURATION {
-                let t = (elapsed / FX_DURATION) as f32;
-                let bottom_y = BOARD_ORIGIN_Y - HEIGHT as f32 * CELL_SIZE;
-                for ring_i in 1..=3 {
-                    let r_scale = 1.0 + t * (0.3 * ring_i as f32);
-                    let alpha = (1.0 - t) * (0.85 / ring_i as f32);
-                    let ring_color = Color::new(0.1, 1.0, 0.85, alpha);
-                    let width = (WIDTH as f32 * CELL_SIZE) * r_scale;
-                    draw_cube_wires(vec3(0.0, bottom_y, 0.0), vec3(width, 0.4 * ring_i as f32, 0.4), ring_color);
-                }
-            } else {
-                land_fx_start = None;
-            }
-        }
+        landing_fx.draw_2d_shockwave(now, BOARD_ORIGIN_Y, HEIGHT, CELL_SIZE, WIDTH);
 
         // Draw 3D Line Clear shockwave expansion rings
-        if let Some(start) = clear_fx_start {
+        if let Some(start) = clear_fx.start_time {
             let elapsed = now - start;
             if elapsed < FX_DURATION {
                 let t = (elapsed / FX_DURATION) as f32;
@@ -366,7 +117,7 @@ async fn amain(mut game: Game) {
                 draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(w, h, CELL_SIZE), gold);
                 draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(w * 1.12, h * 1.12, CELL_SIZE * 1.5), cyan);
             } else {
-                clear_fx_start = None;
+                clear_fx.start_time = None;
             }
         }
 
@@ -374,31 +125,10 @@ async fn amain(mut game: Game) {
         draw_hud(&mut game);
 
         // Draw Line Clear Full-Screen Flash Burst
-        if let Some(start) = clear_fx_start {
-            let elapsed = now - start;
-            if elapsed < FX_DURATION {
-                let t = (elapsed / FX_DURATION) as f32;
-                let flash_alpha = (1.0 - t) * 0.75;
-                draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(1.0, 0.9, 0.2, flash_alpha));
-            }
-        }
+        clear_fx.draw_flash_burst(now);
 
         // Draw Floating Score Banner
-        if let Some((ref msg, start)) = banner_msg {
-            let elapsed = now - start;
-            if elapsed < 1.2 {
-                let t = (elapsed / 1.2) as f32;
-                let alpha = (1.0 - t).min(1.0);
-                let font_size = 32.0 + (1.0 - t) * 8.0;
-                let msg_len = msg.len() as f32;
-                let cx = screen_width() / 2.0 - (msg_len * font_size * 0.28);
-                let cy = 130.0 - t * 20.0;
-                draw_text(msg, cx + 2.0, cy + 2.0, font_size, Color::new(0.0, 0.0, 0.0, alpha * 0.8));
-                draw_text(msg, cx, cy, font_size, Color::new(1.0, 0.9, 0.1, alpha));
-            } else {
-                banner_msg = None;
-            }
-        }
+        banner.draw(now);
 
         let reset_requested = viewcube.update_and_draw(&mut orbit_cam.yaw, &mut orbit_cam.pitch);
         if reset_requested {
@@ -493,7 +223,6 @@ fn draw_faint_grid_and_border() {
     draw_line_3d(vec3(right, bottom, 0.0), vec3(left, bottom, 0.0), border_color);
     draw_line_3d(vec3(left, top, 0.0), vec3(left, bottom, 0.0), border_color);
 }
-
 
 fn draw_neon_cell(x: i32, y: f32, id: u8, is_active: bool) {
     let pos = cell_world_pos(x, y);
