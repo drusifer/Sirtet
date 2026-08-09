@@ -193,8 +193,9 @@ fn draw_bounding_box_well() {
     let box_h = BOX_HEIGHT as f32 * CUBE_SIZE;
     let box_d = BOX_DEPTH as f32 * CUBE_SIZE;
 
-    // Translucent Back Wall (max_z)
-    draw_cube(vec3(center_x, center_y, max_z), vec3(box_w, box_h, 0.04), None, Color::new(0.02, 0.15, 0.35, 0.30));
+    // Translucent Back Wall (min_z - deep background)
+    draw_cube(vec3(center_x, center_y, min_z), vec3(box_w, box_h, 0.04), None, Color::new(0.02, 0.15, 0.35, 0.30));
+
     // Translucent Right Side Wall (max_x)
     draw_cube(vec3(max_x, center_y, center_z), vec3(0.04, box_h, box_d), None, Color::new(0.0, 0.35, 0.65, 0.28));
     // Translucent Bottom Floor Wall (floor_y)

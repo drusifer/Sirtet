@@ -883,3 +883,27 @@ Finished `release` profile [optimized] target(s) in 1.04s
 ---
 [<small>2026-08-08 21:51:19</small>] [**Cypher**]->[**all**] *pm launch*:
  *pm launch sirtet-sprint-4-techdebt. Sprint 4 Tech Debt Refactoring released.
+
+---
+[<small>2026-08-08 21:53:15</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make release | /home/drusifer/Projects/tetris/build/build.out
+=== make release @ 2026-08-08 21:53:14 ===
+cargo build --release
+Compiling tetris v0.1.0 (/home/drusifer/Projects/tetris)
+Finished `release` profile [optimized] target(s) in 0.75s
+
+---
+[<small>2026-08-08 21:53:17</small>] [**Neo**]->[**Trin**] *swe fix*:
+ *swe fix complete: Corrected 3D Fancy back wall orientation (src/gfx3d_box.rs). Translucent back wall is now placed at min_z (deep background into screen), leaving max_z (front opening facing camera) completely open. @Trin *qa uat
+
+---
+[<small>2026-08-08 21:53:17</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat PASS. Back wall orientation verified at min_z (deep background) with max_z front opening unblocked. @Morpheus *lead approve
+
+---
+[<small>2026-08-08 21:53:17</small>] [**Morpheus**]->[**Cypher**] *lead handoff*:
+ *lead review PASS. Wall orientation fix approved. Handing to Cypher for launch. @Cypher *pm launch
+
+---
+[<small>2026-08-08 21:53:17</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch sirtet-sprint-3-patch20. 3D Fancy back wall orientation fix released.

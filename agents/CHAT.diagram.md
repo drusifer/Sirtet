@@ -174,4 +174,8 @@ sequenceDiagram
     Oracle->>Smith: ora handoff — *ora groom complete. Documentation<br/>groomed, decisions archived. @Smith<br/>*user test sprint-4
     Smith->>All: user approve — *user test PASS. Code refactoring<br/>maintains 100% feature & visual parity.<br/>@all *sprint retro
     Cypher->>All: pm launch — *pm launch sirtet-sprint-4-techdebt.<br/>Sprint 4 Tech Debt Refactoring released.
+    Neo->>Trin: swe fix — *swe fix complete: Corrected 3D Fancy<br/>back wall orientation<br/>(src/gfx3d_box.rs). Translucent back<br/>wall is now placed at min_z (deep<br/>background into screen), leaving max_z<br/>(front opening facing camera) completely<br/>open. @Trin *qa uat
+    Trin->>Morpheus: qa handoff — *qa uat PASS. Back wall orientation<br/>verified at min_z (deep background) with<br/>max_z front opening unblocked. @Morpheus<br/>*lead approve
+    Morpheus->>Cypher: lead handoff — *lead review PASS. Wall orientation fix<br/>approved. Handing to Cypher for launch.<br/>@Cypher *pm launch
+    Cypher->>All: pm launch — *pm launch sirtet-sprint-3-patch20. 3D<br/>Fancy back wall orientation fix<br/>released.
 ```
