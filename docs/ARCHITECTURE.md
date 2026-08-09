@@ -166,3 +166,40 @@ src/
 ## Testability
 `spatial_game.rs` is 100% pure engine logic — covered by comprehensive unit tests (`cargo test`) for 3D piece spawning, 3D translation/rotation, 3D boundary & stack collision, and 3D layer clearing. Renderers `terminal_3d.rs` and `gfx3d_box.rs` are thin I/O adapters tested via UAT.
 
+---
+
+# Sprint 5 Addendum: Two-Player Battle Mode (Local 1v1 & VS CPU)
+
+**Owner:** Morpheus (Tech Lead)
+**Status:** Draft for Smith Gate 2 review
+**Date:** 2026-08-09
+
+## Decision Summary
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | Battle Engine Wrapper (`src/battle.rs`) | Wraps two independent `Game` engine instances (`player1` & `player2`). Supports `GameMode::Single`, `GameMode::TwoPlayerLocal`, and `GameMode::VsCpu`. Manages match state (Playing, Winner P1/P2/CPU) without mutating underlying single-player core game logic. |
+| 2 | Garbage Line Attack Mechanics (`src/board.rs` & `src/game.rs`) | Multi-line clears generate garbage lines (2 lines = 1 garbage, 3 lines = 2 garbage, 4 lines = 4 garbage). Garbage lines are queued and injected at the bottom of opponent's board on piece lock. Garbage lines consist of solid blocks with 1 randomly placed hole. |
+| 3 | Autonomous CPU AI Agent (`src/cpu_ai.rs`) | In `VsCpu` mode, Player 2 is driven by a heuristic AI (`CpuAgent`). Evaluates candidate drop positions across all rotations, scoring based on aggregate stack height, holes created, surface bumpiness, and lines cleared. |
+| 4 | Dual Board Viewport Rendering (`src/terminal.rs` & `src/gfx3d.rs`) | Layout renderers support dual side-by-side boards with independent HUD panels (Score, Lines, Level, Next Piece) for P1 and P2/CPU. Control mapping assigns P1 (WASD / Space) and P2 (Arrows / Enter) in local 2P mode. |
+| 5 | Mode Selection CLI & Picker Integration (`src/cli.rs` & `src/picker.rs`) | Adds `--mode=single|2p_local|vs_cpu` CLI flags. Startup picker expanded to select both Game Mode and Renderer Choice. |
+
+## Module Layout (Sprint 5 additions)
+
+```
+src/
+  lib.rs            — + pub mod battle; + pub mod cpu_ai;
+  battle.rs         — NEW: BattleState, GameMode, MatchWinner, garbage routing logic
+  cpu_ai.rs         — NEW: CpuAgent, heuristic evaluation, placement calculator
+  board.rs          — + push_garbage_lines(count, rng) logic
+  game.rs           — + pending_garbage queue handling on piece lock
+  terminal.rs       — Updated: supports side-by-side dual board TUI layout
+  gfx3d.rs          — Updated: supports dual board 2D/3D GPU viewports
+  cli.rs            — Updated: `--mode` flag parsing
+  picker.rs         — Updated: mode selection UI
+```
+
+## Testability
+`battle.rs`, `cpu_ai.rs`, and garbage injection in `board.rs` are pure logic with zero I/O dependencies. Covered 100% by unit tests (`cargo test`) for dual-engine tick, garbage calculation, garbage row generation, CPU AI candidate scoring, and match victory conditions.
+
+

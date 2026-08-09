@@ -30,7 +30,9 @@ pub fn line_clear_base_score(lines: usize) -> u32 {
 /// Lines cleared per level per US-5 AC.
 const LINES_PER_LEVEL: u32 = 10;
 
+#[derive(Clone)]
 pub struct Game {
+
     board: Board,
     active: Piece,
     bag: Vec<PieceType>,
@@ -39,6 +41,7 @@ pub struct Game {
     level: u32,
     lines_cleared: u32,
     last_lines_cleared: u32,
+    pending_garbage: u32,
 }
 
 impl Game {
@@ -55,8 +58,10 @@ impl Game {
             level: 1,
             lines_cleared: 0,
             last_lines_cleared: 0,
+            pending_garbage: 0,
         }
     }
+
 
     fn refill_bag(bag: &mut Vec<PieceType>) {
         let mut fresh = ALL_PIECE_TYPES.to_vec();
@@ -162,29 +167,39 @@ impl Game {
         }
     }
 
-    /// Instantly drops to the lowest legal position and locks.
-    pub fn hard_drop(&mut self) {
+    /// Instantly drops to the lowest legal position and locks. Returns garbage lines sent.
+    pub fn hard_drop(&mut self) -> u32 {
         if !self.is_playing() {
-            return;
+            return 0;
         }
         while self.try_move(0, 1) {}
-        self.lock_active();
+        self.lock_active()
     }
 
-    /// One gravity step: try to fall one row; if blocked, lock and spawn the next piece.
-    pub fn tick(&mut self) {
+    /// One gravity step: try to fall one row; if blocked, lock and spawn the next piece. Returns garbage lines sent.
+    pub fn tick(&mut self) -> u32 {
         if !self.is_playing() {
-            return;
+            return 0;
         }
         if !self.try_move(0, 1) {
-            self.lock_active();
+            self.lock_active()
         } else {
             self.last_lines_cleared = 0;
+            0
         }
     }
 
 
-    fn lock_active(&mut self) {
+
+    pub fn add_garbage(&mut self, count: u32) {
+        self.pending_garbage += count;
+    }
+
+    pub fn pending_garbage(&self) -> u32 {
+        self.pending_garbage
+    }
+
+    fn lock_active(&mut self) -> u32 {
         let id = self.active.piece_type.id();
         self.board.lock_cells(&self.active.cells(), id);
         let cleared = self.board.clear_full_lines();
@@ -194,8 +209,20 @@ impl Game {
             self.lines_cleared += cleared as u32;
             self.level = 1 + self.lines_cleared / LINES_PER_LEVEL;
         }
+        if self.pending_garbage > 0 {
+            let count = self.pending_garbage as usize;
+            self.board.push_garbage_lines(count);
+            self.pending_garbage = 0;
+        }
         self.spawn_next();
+        match cleared {
+            2 => 1,
+            3 => 2,
+            4 => 4,
+            _ => 0,
+        }
     }
+
 
     fn spawn_next(&mut self) {
         let next_type = self.next_from_bag();

@@ -1,7 +1,9 @@
 use macroquad::prelude::*;
 
+use tetris::battle::{BattleState, GameMode, MatchWinner};
 use tetris::board::{HEIGHT, WIDTH};
 use tetris::camera::{OrbitCamera, ViewCubeGizmo};
+use tetris::cpu_ai::CpuAgent;
 use tetris::fx::{format_clear_banner, ClearFx, LandingFx, ScoreBanner, FX_DURATION};
 use tetris::game::{Game, GameState};
 
@@ -22,9 +24,15 @@ fn piece_color(id: u8) -> Color {
     }
 }
 
+#[allow(dead_code)]
 fn cell_world_pos(x: i32, y: f32) -> Vec3 {
+
+    cell_world_pos_at(x, y, 0.0)
+}
+
+fn cell_world_pos_at(x: i32, y: f32, offset_x: f32) -> Vec3 {
     vec3(
-        BOARD_ORIGIN_X + x as f32 * CELL_SIZE + CELL_SIZE / 2.0,
+        BOARD_ORIGIN_X + offset_x + x as f32 * CELL_SIZE + CELL_SIZE / 2.0,
         BOARD_ORIGIN_Y - y * CELL_SIZE - CELL_SIZE / 2.0,
         0.0,
     )
@@ -43,9 +51,92 @@ fn window_conf() -> Conf {
     }
 }
 
+#[allow(dead_code)]
 pub fn run(game: Game) {
-    macroquad::Window::from_config(window_conf(), amain(game));
+    let mut battle = BattleState::new(GameMode::Single);
+    battle.player1 = game;
+    run_battle(battle);
 }
+
+pub fn run_battle(battle: BattleState) {
+    macroquad::Window::from_config(window_conf(), abattle_main(battle));
+}
+
+async fn abattle_main(mut battle: BattleState) {
+    if battle.mode == GameMode::Single {
+        amain(battle.player1).await;
+        return;
+    }
+
+    let orbit_cam = OrbitCamera::default_2d_fancy();
+    let mut last_tick = get_time();
+
+    let cpu_agent = CpuAgent::new();
+
+    loop {
+        let now = get_time();
+        let interval = (battle.player1.gravity_interval_ms() as f64 / 1000.0).max(0.001);
+
+        if is_quit_requested() || is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+            break;
+        }
+
+        if is_key_pressed(KeyCode::R) {
+            let mode = battle.mode;
+            battle = BattleState::new(mode);
+            last_tick = now;
+        }
+
+        // P1 Controls
+        if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
+            battle.player1.move_left();
+        }
+        if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
+            battle.player1.move_right();
+        }
+        if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
+            battle.player1.soft_drop();
+        }
+        if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
+            battle.player1.rotate();
+        }
+        if is_key_pressed(KeyCode::Space) {
+            battle.p1_hard_drop();
+        }
+
+        // P2 Controls (Local)
+        if battle.mode == GameMode::TwoPlayerLocal && is_key_pressed(KeyCode::Enter) {
+            battle.p2_hard_drop();
+        }
+
+        if now - last_tick >= interval {
+            if battle.mode == GameMode::VsCpu
+                && let Some(ref mut p2) = battle.player2
+                && p2.state() == GameState::Playing
+            {
+                cpu_agent.make_move(p2);
+            }
+            battle.tick();
+            last_tick = now;
+        }
+
+        clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
+
+        set_camera(&orbit_cam.camera_3d());
+        draw_board_at(&battle.player1, -3.5);
+        if let Some(ref p2) = battle.player2 {
+            draw_board_at(p2, 3.5);
+        }
+
+        set_default_camera();
+        draw_battle_hud(&battle);
+        draw_match_winner_overlay(battle.winner);
+
+        next_frame().await;
+    }
+}
+
+
 
 async fn amain(mut game: Game) {
     let mut orbit_cam = OrbitCamera::default_2d_fancy();
@@ -168,12 +259,16 @@ fn handle_input(game: &mut Game) -> bool {
 }
 
 fn draw_board(game: &Game) {
-    draw_faint_grid_and_border();
+    draw_board_at(game, 0.0);
+}
+
+fn draw_board_at(game: &Game, offset_x: f32) {
+    draw_faint_grid_and_border_at(offset_x);
 
     for y in 0..HEIGHT as i32 {
         for x in 0..WIDTH as i32 {
             if let Some(id) = game.board().cell(x, y) {
-                draw_neon_cell(x, y as f32, id, false);
+                draw_neon_cell_at(x, y as f32, id, false, offset_x);
             }
         }
     }
@@ -182,17 +277,17 @@ fn draw_board(game: &Game) {
         let id = game.active().piece_type.id();
         let base = game.active();
         for (x, y) in base.cells() {
-            draw_neon_cell(x, y as f32, id, true);
+            draw_neon_cell_at(x, y as f32, id, true, offset_x);
         }
     }
 }
 
-fn draw_faint_grid_and_border() {
+fn draw_faint_grid_and_border_at(offset_x: f32) {
     let grid_color = Color::new(0.15, 0.25, 0.45, 0.35);
     let border_color = Color::new(0.0, 0.85, 1.0, 0.8);
 
-    let left = BOARD_ORIGIN_X;
-    let right = BOARD_ORIGIN_X + WIDTH as f32 * CELL_SIZE;
+    let left = BOARD_ORIGIN_X + offset_x;
+    let right = left + WIDTH as f32 * CELL_SIZE;
     let top = BOARD_ORIGIN_Y;
     let bottom = BOARD_ORIGIN_Y - HEIGHT as f32 * CELL_SIZE;
     let center_x = (left + right) / 2.0;
@@ -210,7 +305,7 @@ fn draw_faint_grid_and_border() {
     draw_cube(vec3(center_x, bottom, 0.0), vec3(board_w, 0.04, CELL_SIZE * 0.8), None, Color::new(0.0, 0.5, 0.85, 0.38));
 
     for x in 0..=WIDTH {
-        let gx = BOARD_ORIGIN_X + x as f32 * CELL_SIZE;
+        let gx = left + x as f32 * CELL_SIZE;
         draw_line_3d(vec3(gx, top, 0.0), vec3(gx, bottom, 0.0), grid_color);
     }
     for y in 0..=HEIGHT {
@@ -224,8 +319,8 @@ fn draw_faint_grid_and_border() {
     draw_line_3d(vec3(left, top, 0.0), vec3(left, bottom, 0.0), border_color);
 }
 
-fn draw_neon_cell(x: i32, y: f32, id: u8, is_active: bool) {
-    let pos = cell_world_pos(x, y);
+fn draw_neon_cell_at(x: i32, y: f32, id: u8, is_active: bool, offset_x: f32) {
+    let pos = cell_world_pos_at(x, y, offset_x);
     let color = piece_color(id);
     let size = vec3(CELL_SIZE, CELL_SIZE, CELL_SIZE * 0.5);
     if is_active {
@@ -317,3 +412,63 @@ fn draw_status_overlay(game: &Game) {
         GameState::Playing => {}
     }
 }
+
+fn draw_match_winner_overlay(winner: MatchWinner) {
+    if winner == MatchWinner::None {
+        return;
+    }
+    let cx = screen_width() / 2.0;
+    let cy = screen_height() / 2.0;
+    let title = match winner {
+        MatchWinner::Player1 => "PLAYER 1 WINS!",
+        MatchWinner::Player2 => "PLAYER 2 WINS!",
+        MatchWinner::Cpu => "CPU WINS!",
+        MatchWinner::None => return,
+    };
+    let bw = 360.0;
+    let bh = 140.0;
+    draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
+    draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.9, 0.1, 1.0));
+    draw_text(title, cx - 110.0, cy - 10.0, 36.0, Color::new(1.0, 0.9, 0.1, 1.0));
+    draw_text("Press R to play again", cx - 100.0, cy + 30.0, 22.0, WHITE);
+}
+
+fn draw_battle_hud(battle: &BattleState) {
+    let p1 = &battle.player1;
+    // P1 Panel (Left)
+    draw_text("PLAYER 1", 40.0, 50.0, 24.0, Color::new(0.0, 0.95, 1.0, 1.0));
+    draw_text(format!("Score: {}", p1.score()), 40.0, 80.0, 18.0, WHITE);
+    draw_text(format!("Level: {}", p1.level()), 40.0, 105.0, 18.0, WHITE);
+    draw_text(format!("Lines: {}", p1.lines_cleared()), 40.0, 130.0, 18.0, WHITE);
+    if p1.pending_garbage() > 0 {
+        draw_text(format!("ATTACK QUEUE: +{}", p1.pending_garbage()), 40.0, 160.0, 18.0, Color::new(1.0, 0.2, 0.3, 1.0));
+    }
+
+    // P2 / CPU Panel (Right)
+    if let Some(ref p2) = battle.player2 {
+        let p2_title = match battle.mode {
+            GameMode::VsCpu => "CPU OPPONENT",
+            _ => "PLAYER 2",
+        };
+        let rx = screen_width() - 240.0;
+        draw_text(p2_title, rx, 50.0, 24.0, Color::new(1.0, 0.6, 0.05, 1.0));
+        draw_text(format!("Score: {}", p2.score()), rx, 80.0, 18.0, WHITE);
+        draw_text(format!("Level: {}", p2.level()), rx, 105.0, 18.0, WHITE);
+        draw_text(format!("Lines: {}", p2.lines_cleared()), rx, 130.0, 18.0, WHITE);
+        if p2.pending_garbage() > 0 {
+            draw_text(format!("ATTACK QUEUE: +{}", p2.pending_garbage()), rx, 160.0, 18.0, Color::new(1.0, 0.2, 0.3, 1.0));
+        }
+    }
+
+
+    // Controls at bottom
+    let p2_controls = match battle.mode {
+        GameMode::VsCpu => "P2: CPU AI (Auto)",
+        _ => "P2: Enter (Hard Drop)",
+    };
+    draw_text("P1: WASD / Space (Hard Drop)", 40.0, screen_height() - 40.0, 16.0, HUD_COLOR);
+    draw_text(p2_controls, screen_width() - 240.0, screen_height() - 40.0, 16.0, HUD_COLOR);
+    draw_text("R: Restart | Q/Esc: Quit", screen_width() / 2.0 - 100.0, screen_height() - 20.0, 16.0, WHITE);
+}
+
+

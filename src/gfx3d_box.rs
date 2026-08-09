@@ -24,17 +24,14 @@ fn piece_color(id: u8) -> Color {
     }
 }
 
+#[allow(dead_code)]
 fn block_world_pos(x: i8, y: i8, z: i8) -> Vec3 {
-    vec3(
-        ORIGIN_X + x as f32 * CUBE_SIZE + CUBE_SIZE / 2.0,
-        ORIGIN_Y - z as f32 * CUBE_SIZE - CUBE_SIZE / 2.0,
-        ORIGIN_Z + y as f32 * CUBE_SIZE + CUBE_SIZE / 2.0,
-    )
+    block_world_pos_at(x, y, z, 0.0)
 }
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Sirtet — Spatial 3D Box Tetris (Blockout Mode)".to_owned(),
+        window_title: "Sirtet — 3D Spatial Box".to_owned(),
         window_width: 1024,
         window_height: 768,
         platform: miniquad::conf::Platform {
@@ -45,9 +42,99 @@ fn window_conf() -> Conf {
     }
 }
 
+use tetris::battle::{BattleState, GameMode, MatchWinner};
+
+#[allow(dead_code)]
 pub fn run(game: SpatialGame) {
     macroquad::Window::from_config(window_conf(), amain(game));
 }
+
+pub fn run_battle(battle: BattleState) {
+    macroquad::Window::from_config(window_conf(), abattle_main(battle));
+}
+
+async fn abattle_main(battle: BattleState) {
+    if battle.mode == GameMode::Single {
+        amain(SpatialGame::new()).await;
+        return;
+    }
+
+    let orbit_cam = OrbitCamera::default_3d_box();
+    let mut p1_game = SpatialGame::new();
+    let mut p2_game = SpatialGame::new();
+    let mut last_tick = get_time();
+
+    loop {
+        let now = get_time();
+        let interval = (tetris::spatial_game::spatial_gravity_interval_ms(p1_game.level) as f64) / 1000.0;
+
+        if is_quit_requested() || is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+            break;
+        }
+
+        if is_key_pressed(KeyCode::R) {
+            p1_game = SpatialGame::new();
+            p2_game = SpatialGame::new();
+            last_tick = now;
+        }
+
+        // P1 Controls
+        if is_key_pressed(KeyCode::A) | is_key_pressed(KeyCode::Left) { p1_game.move_x(-1); }
+        if is_key_pressed(KeyCode::D) | is_key_pressed(KeyCode::Right) { p1_game.move_x(1); }
+        if is_key_pressed(KeyCode::W) | is_key_pressed(KeyCode::Up) { p1_game.move_y(-1); }
+        if is_key_pressed(KeyCode::S) | is_key_pressed(KeyCode::Down) { p1_game.move_y(1); }
+        if is_key_pressed(KeyCode::X) { p1_game.rotate(Axis::X); }
+        if is_key_pressed(KeyCode::Y) { p1_game.rotate(Axis::Y); }
+        if is_key_pressed(KeyCode::Z) { p1_game.rotate(Axis::Z); }
+        if is_key_pressed(KeyCode::Space) { p1_game.hard_drop(); }
+
+        // P2 Controls (Local)
+        if battle.mode == GameMode::TwoPlayerLocal
+            && is_key_pressed(KeyCode::Enter) { p2_game.hard_drop(); }
+
+        if now - last_tick >= interval {
+            if battle.mode == GameMode::VsCpu {
+                use ::rand::RngExt;
+                if ::rand::rng().random_range(0..10) < 3 {
+                    p2_game.move_x(if ::rand::rng().random_range(0..2) == 0 { 1 } else { -1 });
+                }
+            }
+
+            p1_game.tick();
+            p2_game.tick();
+            last_tick = now;
+        }
+
+        clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
+
+        set_camera(&orbit_cam.camera_3d());
+        draw_bounding_box_well_at(-3.5);
+        draw_spatial_grid_at(&p1_game, -3.5);
+
+        draw_bounding_box_well_at(3.5);
+        draw_spatial_grid_at(&p2_game, 3.5);
+
+        set_default_camera();
+        draw_battle_spatial_hud(&p1_game, &p2_game, battle.mode);
+
+        let p1_dead = p1_game.state == GameState::GameOver;
+        let p2_dead = p2_game.state == GameState::GameOver;
+        if p1_dead || p2_dead {
+            let winner = if p1_dead && !p2_dead {
+                if battle.mode == GameMode::VsCpu { MatchWinner::Cpu } else { MatchWinner::Player2 }
+            } else if p2_dead && !p1_dead {
+                MatchWinner::Player1
+            } else {
+                MatchWinner::None
+            };
+            draw_spatial_match_winner_overlay(winner);
+        }
+
+        next_frame().await;
+    }
+}
+
+
 
 async fn amain(mut game: SpatialGame) {
     let mut orbit_cam = OrbitCamera::default_3d_box();
@@ -97,8 +184,9 @@ async fn amain(mut game: SpatialGame) {
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
 
         set_camera(&orbit_cam.camera_3d());
-        draw_bounding_box_well();
-        draw_spatial_grid(&game);
+        draw_bounding_box_well_at(0.0);
+        draw_spatial_grid_at(&game, 0.0);
+
 
         // Draw 3D Landing shockwave pulses
         let floor_y = ORIGIN_Y - BOX_HEIGHT as f32 * CUBE_SIZE;
@@ -179,9 +267,17 @@ fn handle_input(game: &mut SpatialGame) -> bool {
     is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape)
 }
 
-fn draw_bounding_box_well() {
-    let min_x = ORIGIN_X;
-    let max_x = ORIGIN_X + BOX_WIDTH as f32 * CUBE_SIZE;
+fn block_world_pos_at(x: i8, y: i8, z: i8, offset_x: f32) -> Vec3 {
+    vec3(
+        ORIGIN_X + offset_x + x as f32 * CUBE_SIZE + CUBE_SIZE / 2.0,
+        ORIGIN_Y - z as f32 * CUBE_SIZE - CUBE_SIZE / 2.0,
+        ORIGIN_Z + y as f32 * CUBE_SIZE + CUBE_SIZE / 2.0,
+    )
+}
+
+fn draw_bounding_box_well_at(offset_x: f32) {
+    let min_x = ORIGIN_X + offset_x;
+    let max_x = min_x + BOX_WIDTH as f32 * CUBE_SIZE;
     let min_z = ORIGIN_Z;
     let max_z = ORIGIN_Z + BOX_DEPTH as f32 * CUBE_SIZE;
     let floor_y = ORIGIN_Y - BOX_HEIGHT as f32 * CUBE_SIZE;
@@ -221,12 +317,12 @@ fn draw_bounding_box_well() {
     draw_line_3d(vec3(min_x, ORIGIN_Y, max_z), vec3(min_x, floor_y, max_z), color_pillars);
 }
 
-fn draw_spatial_grid(game: &SpatialGame) {
+fn draw_spatial_grid_at(game: &SpatialGame, offset_x: f32) {
     for z in 0..BOX_HEIGHT as i8 {
         for x in 0..BOX_WIDTH as i8 {
             for y in 0..BOX_DEPTH as i8 {
                 if let Some(id) = game.board.cells[z as usize][x as usize][y as usize] {
-                    draw_neon_cube(x, y, z, id, false);
+                    draw_neon_cube_at(x, y, z, id, false, offset_x);
                 }
             }
         }
@@ -236,14 +332,14 @@ fn draw_spatial_grid(game: &SpatialGame) {
         let color_id = game.active_piece.piece_type.color_id();
         for (wx, wy, wz) in game.active_piece.world_blocks() {
             if wz >= 0 && wz < BOX_HEIGHT as i8 {
-                draw_neon_cube(wx, wy, wz, color_id, true);
+                draw_neon_cube_at(wx, wy, wz, color_id, true, offset_x);
             }
         }
     }
 }
 
-fn draw_neon_cube(x: i8, y: i8, z: i8, id: u8, is_active: bool) {
-    let pos = block_world_pos(x, y, z);
+fn draw_neon_cube_at(x: i8, y: i8, z: i8, id: u8, is_active: bool, offset_x: f32) {
+    let pos = block_world_pos_at(x, y, z, offset_x);
     let color = piece_color(id);
     let size = vec3(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
     if is_active {
@@ -266,45 +362,47 @@ fn draw_hud(game: &SpatialGame) {
     draw_text(format!("SCORE: {}", game.score), 20.0, base_y, 24.0, HUD_COLOR);
     draw_text(format!("LEVEL: {}", game.level), 20.0, base_y + 28.0, 24.0, HUD_COLOR);
     draw_text(format!("LAYERS: {}", game.layers_cleared), 20.0, base_y + 56.0, 24.0, HUD_COLOR);
+}
 
-    let lines = [
-        "3D CONTROLS:",
-        "Left/Right/A/D  Translate X",
-        "Up/Down/W/S     Translate Y",
-        "X / Y / Z       Rotate 3D Axes",
-        "Space           Hard Drop Z",
-        "ViewCube Drag   Orbit 3D Gizmo",
-        "Mouse Drag/IJKL Orbit View",
-        "Scroll / +/-    Zoom View",
-        "H / C           Home Reset View",
-        "P               Pause",
-        "R               Restart",
-        "Q/Esc           Quit",
-    ];
-    let origin_x = screen_width() - 260.0;
-    for (i, line) in lines.iter().enumerate() {
-        draw_text(line, origin_x, 180.0 + i as f32 * 22.0, 18.0, HUD_COLOR);
-    }
+fn draw_battle_spatial_hud(p1: &SpatialGame, p2: &SpatialGame, mode: GameMode) {
 
+    // P1 Info (Left)
+    draw_text("PLAYER 1 (3D SPATIAL)", 40.0, 50.0, 24.0, Color::new(0.0, 0.95, 1.0, 1.0));
+    draw_text(format!("Score: {}", p1.score), 40.0, 80.0, 18.0, WHITE);
+    draw_text(format!("Level: {}", p1.level), 40.0, 105.0, 18.0, WHITE);
+    draw_text(format!("Layers: {}", p1.layers_cleared), 40.0, 130.0, 18.0, WHITE);
+
+    // P2 / CPU Info (Right)
+    let p2_title = match mode {
+        GameMode::VsCpu => "CPU OPPONENT (3D SPATIAL)",
+        _ => "PLAYER 2 (3D SPATIAL)",
+    };
+    let rx = screen_width() - 280.0;
+    draw_text(p2_title, rx, 50.0, 24.0, Color::new(1.0, 0.6, 0.05, 1.0));
+    draw_text(format!("Score: {}", p2.score), rx, 80.0, 18.0, WHITE);
+    draw_text(format!("Level: {}", p2.level), rx, 105.0, 18.0, WHITE);
+    draw_text(format!("Layers: {}", p2.layers_cleared), rx, 130.0, 18.0, WHITE);
+
+    // Controls legend
+    draw_text("P1: WASD/Arrows (X/Y) | XYZ (Rotate 3D) | Space (Drop Z)", 40.0, screen_height() - 40.0, 16.0, HUD_COLOR);
+    draw_text("R: Restart | Q/Esc: Quit", screen_width() / 2.0 - 100.0, screen_height() - 20.0, 16.0, WHITE);
+}
+
+fn draw_spatial_match_winner_overlay(winner: MatchWinner) {
+    if winner == MatchWinner::None { return; }
     let cx = screen_width() / 2.0;
     let cy = screen_height() / 2.0;
-    match game.state {
-        GameState::Paused => {
-            let bw = 240.0;
-            let bh = 80.0;
-            draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
-            draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, HUD_COLOR);
-            draw_text("PAUSED", cx - 60.0, cy + 10.0, 40.0, WHITE);
-        }
-        GameState::GameOver => {
-            let bw = 360.0;
-            let bh = 160.0;
-            draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
-            draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.2, 0.3, 1.0));
-            draw_text("GAME OVER", cx - 110.0, cy - 20.0, 40.0, Color::new(1.0, 0.2, 0.3, 1.0));
-            draw_text(format!("Final score: {}", game.score), cx - 100.0, cy + 20.0, 24.0, WHITE);
-            draw_text("Press R to restart", cx - 100.0, cy + 50.0, 24.0, HUD_COLOR);
-        }
-        GameState::Playing => {}
-    }
+    let title = match winner {
+        MatchWinner::Player1 => "PLAYER 1 WINS!",
+        MatchWinner::Player2 => "PLAYER 2 WINS!",
+        MatchWinner::Cpu => "CPU WINS!",
+        MatchWinner::None => return,
+    };
+    let bw = 360.0;
+    let bh = 140.0;
+    draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
+    draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.9, 0.1, 1.0));
+    draw_text(title, cx - 110.0, cy - 10.0, 36.0, Color::new(1.0, 0.9, 0.1, 1.0));
+    draw_text("Press R to play again", cx - 100.0, cy + 30.0, 22.0, WHITE);
 }
+

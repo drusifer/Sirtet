@@ -1,49 +1,35 @@
-# Agent State
+# Agent State — Oracle (Knowledge Officer)
 
 ## Context
 ### Recent Decisions
-- Groomed docs at sprint close: created docs/DECISIONS.md (consolidated scope/architecture/
-  implementation decisions), updated agents/oracle.docs/lessons.md (RNG-test-flakiness lesson,
-  PTY-smoke-test-harness lesson, Write-tool-block workaround), updated
-  agents/oracle.docs/memory.md (major decisions table, repo structure, sprint history).
-  Created root README.md (was missing) with ToC, run/test instructions, controls table.
+- Groomed documentation for Sprint 5 and dual viewports across all 4 renderers.
+- Updated `docs/USER_STORIES.md`, `docs/ARCHITECTURE.md`, `task.md`, and persona state files.
 
 ### Key Findings
-- CHAT.md at 25 real messages (well under the 50-100 archive threshold) - no archiving
-  needed this sprint.
+- Documentation and code complete.
 
 ### Important Notes
-None new.
+- Prepared for shutdown.
 
 ## Current Task
-**Status:** Sprint 3 groom complete, handed to Smith for end-to-end user testing.
-**Assigned to:** Oracle (self) -> Smith
-**Started:** 2026-08-08
+**Status:** Documentation grooming complete. Prepared for shutdown.
+**Assigned to:** Oracle -> User
+**Started:** 2026-08-09
 
 ### Task Description
-Stage 3 Step 7: Groom documentation and archive chat if needed.
+Session shutdown preparation.
 
 ### Progress
-- [x] Evaluated CHAT.md history.
-- [x] Verified PRD, USER_STORIES, ARCHITECTURE status headers for Sprint 3.
-- [x] Posted handoff to Smith (`*user test sirtet-sprint-3`).
-
+- [x] Documented Sprint 5 stories and architecture.
+- [x] Groomed repository documentation and state files.
+- [x] Verified CHAT.md log integrity.
 
 ### Blockers
 None
 
 ## Next Steps
 ### Immediate Next Action
-Available if Smith needs historical/documentation context during end-to-end testing.
+Awaiting next documentation task.
 
 ### Waiting On
-Smith *user test (MUST include live 3D input) -> retro -> Cypher *pm launch.
-
-### Planned Work
-- [ ] Post Oracle's sprint retro (documentation gaps, decisions not recorded) when
-      *sprint retro is called — likely note: the input-verification gap should probably be
-      flagged as a testable acceptance criterion earlier next time (at story-writing time),
-      not discovered as a sandbox limitation mid-implementation
-
----
-*Last updated: 2026-08-07 23:25*
+User.

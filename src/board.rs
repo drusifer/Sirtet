@@ -1,9 +1,11 @@
 pub const WIDTH: usize = 10;
 pub const HEIGHT: usize = 20;
 
+#[derive(Clone)]
 pub struct Board {
     cells: Vec<Vec<Option<u8>>>,
 }
+
 
 impl Board {
     pub fn new() -> Self {
@@ -53,7 +55,25 @@ impl Board {
         }
         cleared
     }
+
+    /// Pushes `count` garbage lines into the bottom of the board, shifting top rows up.
+    /// Each garbage row is solid (block ID 8) except for a random hole column.
+    pub fn push_garbage_lines(&mut self, count: usize) {
+        use rand::RngExt;
+        for _ in 0..count {
+            if !self.cells.is_empty() {
+                self.cells.remove(0);
+            }
+            let hole_x = rand::rng().random_range(0..WIDTH);
+            let mut row = vec![Some(8); WIDTH];
+            row[hole_x] = None;
+            self.cells.push(row);
+        }
+    }
+
 }
+
+
 
 impl Default for Board {
     fn default() -> Self {

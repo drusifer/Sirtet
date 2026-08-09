@@ -1,37 +1,35 @@
-# Agent State
+# Agent State — Morpheus (Tech Lead)
 
 ## Context
 ### Recent Decisions
-- All 7 implementation phases reviewed and approved. Architecture (docs/ARCHITECTURE.md)
-  held up unchanged through the whole sprint - no decisions had to be revisited.
-- Sprint moving to Stage 3 close: Oracle groom -> Smith end-to-end test -> retro -> Cypher
-  launch.
+- Architecture Addendum for Sprint 5 recorded in `docs/ARCHITECTURE.md`.
+- Side-by-side dual board spatial viewports integrated across `gfx3d.rs`, `terminal_3d.rs`, and `gfx3d_box.rs`.
 
 ### Key Findings
-- Engine/renderer separation (decision #1 in ARCHITECTURE.md) proved its worth: 33 unit
-  tests cover 100% of game logic with zero terminal dependency, while main.rs (untestable via
-  cargo test) was verified through manual PTY smoke testing across phases 6-7.
+- Zero architecture violations, clean separation of battle state and renderers.
 
 ### Important Notes
-None new.
+- Prepared for shutdown.
 
 ## Current Task
-**Status:** Sprint 3 plan approved. Assigned Phase 1 to Neo (`*swe impl phase-1`).
-**Assigned to:** Morpheus (self) -> Neo
-**Started:** 2026-08-08
+**Status:** Architecture review and shutdown complete.
+**Assigned to:** Morpheus -> User
+**Started:** 2026-08-09
 
 ### Task Description
-Step 3a: Review Mouse's Sprint 3 phase breakdown (task.md).
+Session shutdown preparation.
 
 ### Progress
-- [x] Reviewed 6 phases in `task.md`. Verified dependency ordering (pure spatial engine -> layer clears -> CLI/picker -> TUI 3D -> Fancy GPU 3D -> integration).
-- [x] Approved Sprint 3 plan and handed off Phase 1 to Neo (`*swe impl phase-1`).
+- [x] Sprint 5 architecture addendum approved.
+- [x] All 4 renderers verified for battle mode and side-by-side rendering.
+- [x] Clean test and lint gates passed.
 
 ### Blockers
 None
 
 ## Next Steps
 ### Immediate Next Action
-Awaiting Neo's Phase 1 implementation handoff (`*swe handoff` @Trin *qa uat phase-1).
+Awaiting next architectural assignment.
 
-
+### Waiting On
+User / Cypher.

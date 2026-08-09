@@ -1,40 +1,35 @@
-# Agent State
+# Agent State — Smith (User & HCI Representative)
 
 ## Context
 ### Recent Decisions
-- End-to-end *user test: PASS. Full PTY playthrough covering initial render, movement,
-  rotation, hard-drop, pause (on a live game - confirmed separately after an ambiguous first
-  run), game-over overlay, restart, clean quit. No usability defects filed.
-- One non-blocking observation for backlog: line clears are instant with no visual feedback
-  (flash/pause) - not a PRD requirement, just a polish idea for a future sprint.
+- Approved Sprint 5 features and side-by-side dual board viewports (`*user approve`).
+- HCI heuristics verified across all 4 rendering backends (`terminal`, `3d`, `terminal_3d`, `3d_box`).
 
 ### Key Findings
-- My first combined playtest (60 rapid hard-drops before testing pause) hit game-over before
-  reaching the pause step, so PAUSED didn't render in that run - re-tested pause in isolation
-  on a fresh game and confirmed it works correctly. This was a test-sequencing artifact, not
-  a bug; matches Phase 5's verified "pause is a no-op once game-over" behavior.
+- Great visual feedback, clear victory overlays, intuitive dual controls.
 
 ### Important Notes
-None new.
+- Prepared for shutdown.
 
 ## Current Task
-**Status:** Gate 2 review complete (`*user approve`). Handed to Mouse for phase planning.
-**Assigned to:** Smith (self) -> Mouse
-**Started:** 2026-08-08
+**Status:** End-to-end testing passed. Ready for shutdown.
+**Assigned to:** Smith -> User
+**Started:** 2026-08-09
 
 ### Task Description
-Gate 2 review of Sprint 3 Architecture (docs/ARCHITECTURE.md addendum).
+Session shutdown preparation.
 
 ### Progress
-- [x] Evaluated architecture addendum against HCI heuristics (CLI flag syntax, 4-mode picker options, fallback path).
-- [x] Confirmed fallback from `gfx3d_box` to `terminal_3d` provides graceful degradation when GPU acceleration is unavailable.
-- [x] Approved architecture and handed off to Mouse (`*user approve`).
+- [x] Verified side-by-side dual board UI across all 4 renderers.
+- [x] Verified battle controls and match victory overlays.
+- [x] Posted user approval.
 
 ### Blockers
 None
 
 ## Next Steps
 ### Immediate Next Action
-Awaiting Mouse's phase breakdown (`*sm plan sprint`).
+Awaiting next user testing cycle.
 
-
+### Waiting On
+User.

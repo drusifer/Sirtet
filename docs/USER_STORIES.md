@@ -276,3 +276,53 @@ Gate 1 review, same pattern as Sprint 1's US-8).
 - Custom box size selection (e.g. 3x3x10, 4x4x10, 6x6x12).
 - Pentacube / extended piece sets toggle.
 
+---
+
+# Sprint 5: Two-Player Battle Mode (Local 1v1 & VS CPU)
+
+**Owner:** Cypher (PM)
+**Status:** Draft for Smith review (Gate 1)
+**Date:** 2026-08-09
+
+## US-24: Battle Mode Selection & Launch Options
+**As a** player, **I want** to select between Single Player, Local 2-Player (1v1), or VS CPU mode at startup, **so that** I can play competitively against a friend or a computer opponent.
+
+**AC:**
+- Startup menu / CLI flag supports `--mode=single`, `--mode=2p_local`, and `--mode=vs_cpu`.
+- Interactive mode picker lets players choose game mode (Single Player / Local 1v1 / VS CPU) and renderer mode.
+- Dual-player keybindings in 2P local mode: Player 1 (A/D move, S soft drop, W rotate, Space hard drop), Player 2 (Left/Right move, Down soft drop, Up rotate, Enter hard drop). Legend displays controls clearly for both players.
+
+## US-25: Side-by-Side Dual Board Rendering
+**As a** player, **I want** to see both Player 1's and Player 2's (or CPU's) boards side-by-side with separate HUDs, **so that** I can track both my stack and my opponent's progress in real-time.
+
+**AC:**
+- Terminal (TUI) and Fancy GPU renderers display two independent boards side-by-side.
+- Each board displays its own falling piece, next piece preview, score, lines cleared, and level.
+- Clear visual labeling indicates Player 1 vs Player 2 / CPU.
+
+## US-26: Garbage Line Attack Engine
+**As a** competitive player, **I want** multi-line clears on my board to dump garbage lines into my opponent's board, **so that** I can pressure my opponent and disrupt their stack.
+
+**AC:**
+- Clearing multiple lines sends garbage lines to the opponent: 2 lines cleared = 1 garbage line, 3 lines cleared = 2 garbage lines, 4 lines (Tetris) = 4 garbage lines. (Single line clear = 0 garbage lines).
+- Garbage lines push existing blocks upward from the bottom of the recipient's board.
+- Each garbage line contains solid blocks across all columns except for 1 randomly placed hole.
+- Incoming garbage queue / pending attack is applied to the opponent's board when their active piece locks.
+
+## US-27: Autonomous CPU Opponent AI
+**As a** solo player, **I want** to play against a computer-controlled opponent in VS CPU mode, **so that** I can practice battle mode without needing a second human player.
+
+**AC:**
+- In VS CPU mode, Player 2 is driven by an AI agent evaluating placement locations (evaluating stack height, holes, line clears, and surface roughness).
+- CPU operates at a configurable drop speed / tick delay matching difficulty levels.
+- CPU piece movement, rotation, and line clearing execute cleanly without crashing or freezing.
+
+## US-28: Battle Match Win/Loss & Results Screen
+**As a** battle mode player, **I want** a clear match victory notification when my opponent tops out, **so that** the winner of the battle is clearly celebrated.
+
+**AC:**
+- When one player's board tops out (new piece cannot spawn), that player is knocked out and the surviving player is declared WINNER.
+- A match results overlay displays "PLAYER 1 WINS!" / "PLAYER 2 WINS!" / "CPU WINS!" alongside both final scores.
+- Pressing `R` restarts the battle match; pressing `Q`/`Esc` returns to main menu or exits cleanly.
+
+

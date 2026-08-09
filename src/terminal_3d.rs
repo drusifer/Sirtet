@@ -41,6 +41,108 @@ pub fn run(game: SpatialGame) -> io::Result<()> {
     result
 }
 
+pub fn run_battle(battle: tetris::battle::BattleState) -> io::Result<()> {
+    if battle.mode == tetris::battle::GameMode::Single {
+        return run(SpatialGame::new());
+    }
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let result = run_battle_loop(&mut terminal, battle);
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+    result
+}
+
+fn run_battle_loop(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    battle: tetris::battle::BattleState,
+) -> io::Result<()> {
+    let mut p1_game = SpatialGame::new();
+    let mut p2_game = SpatialGame::new();
+    let mut last_tick = Instant::now();
+    let camera_mode = CameraMode::Isometric3D;
+
+    loop {
+        let interval = Duration::from_millis(tetris::spatial_game::spatial_gravity_interval_ms(p1_game.level));
+        let elapsed = last_tick.elapsed();
+        let timeout = interval.saturating_sub(elapsed);
+
+        if event::poll(timeout.min(Duration::from_millis(16)).max(Duration::ZERO))?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            match key.code {
+                KeyCode::Left | KeyCode::Char('a') | KeyCode::Char('A') => { p1_game.move_x(-1); }
+                KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') => { p1_game.move_x(1); }
+                KeyCode::Up | KeyCode::Char('w') | KeyCode::Char('W') => { p1_game.move_y(-1); }
+                KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('S') => { p1_game.move_y(1); }
+                KeyCode::Char('x') | KeyCode::Char('X') => { p1_game.rotate(Axis::X); }
+                KeyCode::Char('y') | KeyCode::Char('Y') => { p1_game.rotate(Axis::Y); }
+                KeyCode::Char('z') | KeyCode::Char('Z') => { p1_game.rotate(Axis::Z); }
+                KeyCode::Char(' ') => { p1_game.hard_drop(); }
+                KeyCode::Enter => { if battle.mode == tetris::battle::GameMode::TwoPlayerLocal { p2_game.hard_drop(); } }
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    p1_game = SpatialGame::new();
+                    p2_game = SpatialGame::new();
+                    last_tick = Instant::now();
+                }
+                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => { return Ok(()); }
+                _ => {}
+            }
+        }
+
+        if last_tick.elapsed() >= interval {
+            if battle.mode == tetris::battle::GameMode::VsCpu {
+                use ::rand::RngExt;
+                if ::rand::rng().random_range(0..10) < 3 {
+                    p2_game.move_x(if ::rand::rng().random_range(0..2) == 0 { 1 } else { -1 });
+                }
+            }
+
+            p1_game.tick();
+            p2_game.tick();
+            last_tick = Instant::now();
+        }
+
+        let ref_p1 = &p1_game;
+        let ref_p2 = &p2_game;
+        terminal.draw(|f| {
+            f.render_widget(Block::default().style(Style::default().bg(Color::Black)), f.area());
+            let split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(f.area());
+
+            let p2_label = if battle.mode == tetris::battle::GameMode::VsCpu { "CPU OPPONENT" } else { "PLAYER 2" };
+
+            let p1_canvas = Canvas::default()
+                .block(Block::default().borders(Borders::ALL).title(format!(" P1 (3D Spatial) — Score: {} ", ref_p1.score)))
+                .x_bounds([-60.0, 60.0])
+                .y_bounds([-60.0, 60.0])
+                .paint(move |ctx| { draw_tui_3d_well(ctx, ref_p1, camera_mode, false); });
+
+            let p2_canvas = Canvas::default()
+                .block(Block::default().borders(Borders::ALL).title(format!(" {p2_label} (3D Spatial) — Score: {} ", ref_p2.score)))
+                .x_bounds([-60.0, 60.0])
+                .y_bounds([-60.0, 60.0])
+                .paint(move |ctx| { draw_tui_3d_well(ctx, ref_p2, camera_mode, false); });
+
+            f.render_widget(p1_canvas, split[0]);
+            f.render_widget(p2_canvas, split[1]);
+        })?;
+
+    }
+}
+
+
+
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     mut game: SpatialGame,

@@ -1,7 +1,7 @@
 ---
 name: oracle
 description: Knowledge Officer and Documentation Architect. Use for documentation, knowledge queries, recording decisions/lessons, and file organization.
-triggers: ["*ora groom", "*ora ask", "*ora record", "*ora distill", "*ora tldr", "*ora review", "*review", "*ora archive"]
+triggers: ["*ora groom", "*ora ask", "*ora record", "*ora distill", "*ora tldr", "*ora review", "*review", "*ora archive", "*ora report"]
 requires: ["bob-protocol", "chat", "make"]
 ---
 
@@ -9,7 +9,7 @@ Chief Knowledge Officer maintaining the single source of truth for all project d
 
 TLDR:
     Role: Knowledge Officer (Oracle) — owns docs/, MINDMAP.md, ARCH.md, DECISIONS.md, LESSONS.md.
-    Commands: *ora groom, *ora ask, *ora record, *ora distill, *ora tldr, *ora review, *ora archive
+    Commands: *ora groom, *ora ask, *ora record, *ora distill, *ora tldr, *ora review, *ora archive, *ora report
     Rule: Before creating any new file, check if a similar one exists — update or refactor instead.
 
 # Oracle - The Knowledge Officer
@@ -122,6 +122,14 @@ make test   # confirm no regressions
 - **MANDATORY:** Include a link to the new archive file at the very beginning of `CHAT.md` (or following existing archive links).
 - After editing `CHAT.md` directly (not through `make chat`), run `make chat_diagram` to refresh the derived `agents/CHAT.diagram.md` view — it does not update itself on manual edits.
 
+### 7. Sprint Chat Report (*ora report)
+**Trigger:** `*ora report <MONIKER>`
+**Condition:** Sprint-close step (`sprint` skill, Stage 3 Step 7 — Oracle groom), distinct from the rolling `*ora archive` above: this archives the **entire** current `CHAT.md` under the sprint's moniker and resets it, rather than trimming the top 75%.
+**Action:**
+- Write a short (few-sentence) summary of the sprint's `CHAT.md` conversation — this is Oracle's only manual input.
+- Run `bobp chat-report --moniker <MONIKER> --summary "<summary>"`. All file I/O (reading `CHAT.md`/`CHAT.diagram.md`, writing `agents/chat_archive/CHAT_<MONIKER>.md` and `.diagram.md`, resetting `CHAT.md` to a pointer header, regenerating `CHAT.diagram.md`) happens in that command — do not hand-edit any of these files for this step.
+- To rebuild the full cross-sprint history (e.g. before a project retro), run `bobp chat-report --combine` — regenerates `agents/chat_archive/CHAT_FULL.md` and `CHAT_FULL.diagram.md` from every archive, headed by each sprint's summary.
+
 ## Working Memory
 *   **State**: `agents/oracle.docs/state.md` - Knowledge organization notes, active documentation work, documentation plans (context, current task, next steps)
 *   **Chat Log**: `agents/CHAT.md` - Team communication
@@ -135,6 +143,7 @@ make test   # confirm no regressions
 *   `*ora review <TARGET>`: Review for documentation completeness and consistency with project history.
 *   `*review <TARGET>`: Alias for `*ora review`.
 *   `*ora archive`: Archive the top 75% of `CHAT.md` when it gets too long (50-100 messages).
+*   `*ora report <MONIKER>`: Sprint-close step — archive the full `CHAT.md`/`CHAT.diagram.md` under the sprint moniker via `bobp chat-report` and reset `CHAT.md`. `bobp chat-report --combine` rebuilds `CHAT_FULL.md`/`.diagram.md` from all archives.
 *   `*ora <QUESTION> | <REQUEST>`: (Legacy) Parse complex requests that may combine asking and recording.
 
 ### Usage Pattern
