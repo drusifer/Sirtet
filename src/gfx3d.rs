@@ -71,7 +71,7 @@ async fn abattle_main(mut battle: BattleState) {
     let orbit_cam = OrbitCamera::default_2d_fancy();
     let mut last_tick = get_time();
 
-    let cpu_agent = CpuAgent::new();
+    let mut cpu_agent = CpuAgent::new();
 
     loop {
         let now = get_time();
@@ -268,7 +268,7 @@ fn draw_board_at(game: &Game, offset_x: f32) {
     for y in 0..HEIGHT as i32 {
         for x in 0..WIDTH as i32 {
             if let Some(id) = game.board().cell(x, y) {
-                draw_neon_cell_at(x, y as f32, id, false, offset_x);
+                draw_neon_cell_at(x, y as f32, id, offset_x);
             }
         }
     }
@@ -276,10 +276,34 @@ fn draw_board_at(game: &Game, offset_x: f32) {
     if game.state() != GameState::GameOver {
         let id = game.active().piece_type.id();
         let base = game.active();
-        for (x, y) in base.cells() {
-            draw_neon_cell_at(x, y as f32, id, true, offset_x);
+        let cells = base.cells();
+        draw_active_piece_glow(&cells, id, offset_x);
+        for (x, y) in cells {
+            draw_neon_cell_at(x, y as f32, id, offset_x);
         }
     }
+}
+
+/// Draws a single soft halo sized to the active piece's bounding box, rather than
+/// per-cell glow quads — overlapping per-cell glows double up alpha along the seams
+/// between adjacent cells of the same piece, producing a bright halo artifact there.
+fn draw_active_piece_glow(cells: &[(i32, i32); 4], id: u8, offset_x: f32) {
+    let color = piece_color(id);
+    let glow = Color::new(color.r, color.g, color.b, 0.12);
+    let min_x = cells.iter().map(|(x, _)| *x).min().unwrap();
+    let max_x = cells.iter().map(|(x, _)| *x).max().unwrap();
+    let min_y = cells.iter().map(|(_, y)| *y).min().unwrap();
+    let max_y = cells.iter().map(|(_, y)| *y).max().unwrap();
+    let center_x = (min_x + max_x) as f32 / 2.0;
+    let center_y = (min_y + max_y) as f32 / 2.0;
+    let pos = vec3(
+        BOARD_ORIGIN_X + offset_x + center_x * CELL_SIZE + CELL_SIZE / 2.0,
+        BOARD_ORIGIN_Y - center_y * CELL_SIZE - CELL_SIZE / 2.0,
+        0.0,
+    );
+    let w = (max_x - min_x + 1) as f32 * CELL_SIZE * 1.05;
+    let h = (max_y - min_y + 1) as f32 * CELL_SIZE * 1.05;
+    draw_cube(pos, vec3(w, h, CELL_SIZE * 0.5), None, glow);
 }
 
 fn draw_faint_grid_and_border_at(offset_x: f32) {
@@ -319,17 +343,12 @@ fn draw_faint_grid_and_border_at(offset_x: f32) {
     draw_line_3d(vec3(left, top, 0.0), vec3(left, bottom, 0.0), border_color);
 }
 
-fn draw_neon_cell_at(x: i32, y: f32, id: u8, is_active: bool, offset_x: f32) {
+fn draw_neon_cell_at(x: i32, y: f32, id: u8, offset_x: f32) {
     let pos = cell_world_pos_at(x, y, offset_x);
     let color = piece_color(id);
     let size = vec3(CELL_SIZE, CELL_SIZE, CELL_SIZE * 0.5);
-    if is_active {
-        let glow = Color::new(color.r, color.g, color.b, 0.12);
-        draw_cube(pos, vec3(CELL_SIZE * 1.05, CELL_SIZE * 1.05, CELL_SIZE * 0.5), None, glow);
-    }
     draw_cube(pos, size, None, color);
     draw_cube_wires(pos, size, WHITE);
-    draw_cube_wires(pos, vec3(CELL_SIZE * 0.82, CELL_SIZE * 0.82, CELL_SIZE * 0.5), Color::new(0.0, 0.0, 0.0, 0.5));
 }
 
 const HUD_COLOR: Color = Color::new(0.6, 0.95, 1.0, 1.0);

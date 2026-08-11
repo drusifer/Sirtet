@@ -99,11 +99,8 @@ fn run_battle_loop(
         }
 
         if last_tick.elapsed() >= interval {
-            if battle.mode == tetris::battle::GameMode::VsCpu {
-                use ::rand::RngExt;
-                if ::rand::rng().random_range(0..10) < 3 {
-                    p2_game.move_x(if ::rand::rng().random_range(0..2) == 0 { 1 } else { -1 });
-                }
+            if battle.mode == tetris::battle::GameMode::VsCpu && macroquad::rand::gen_range(0, 10) < 3 {
+                p2_game.move_x(if macroquad::rand::gen_range(0, 2) == 0 { 1 } else { -1 });
             }
 
             p1_game.tick();

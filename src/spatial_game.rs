@@ -1,4 +1,4 @@
-use rand::seq::SliceRandom;
+use macroquad::rand::ChooseRandom;
 
 
 pub const BOX_WIDTH: usize = 5;
@@ -214,7 +214,7 @@ impl SpatialGame {
     fn refill_bag_if_empty(&mut self) {
         if self.bag.is_empty() {
             let mut new_bag = SpatialPieceType::ALL.to_vec();
-            new_bag.shuffle(&mut rand::rng());
+            new_bag.shuffle();
             self.bag = new_bag;
         }
     }

@@ -1,6 +1,6 @@
 use crate::board::Board;
 use crate::piece::{Piece, PieceType, ALL_PIECE_TYPES};
-use rand::seq::SliceRandom;
+use macroquad::rand::ChooseRandom;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameState {
@@ -65,7 +65,7 @@ impl Game {
 
     fn refill_bag(bag: &mut Vec<PieceType>) {
         let mut fresh = ALL_PIECE_TYPES.to_vec();
-        fresh.shuffle(&mut rand::rng());
+        fresh.shuffle();
         bag.extend(fresh);
     }
 

@@ -61,7 +61,7 @@ fn run_battle_loop(
     mut battle: BattleState,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
-    let cpu_agent = CpuAgent::new();
+    let mut cpu_agent = CpuAgent::new();
 
     loop {
         let interval = Duration::from_millis(battle.player1.gravity_interval_ms());

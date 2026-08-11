@@ -1,16 +1,24 @@
 mod gfx3d;
 mod gfx3d_box;
+
+#[cfg(not(target_arch = "wasm32"))]
 mod picker;
+#[cfg(not(target_arch = "wasm32"))]
 mod terminal;
+#[cfg(not(target_arch = "wasm32"))]
 mod terminal_3d;
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::ExitCode;
 
 use tetris::battle::BattleState;
+#[cfg(target_arch = "wasm32")]
+use tetris::battle::GameMode;
 use tetris::cli::{self, RendererChoice};
 
 
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
@@ -60,6 +68,14 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let battle = BattleState::new(GameMode::VsCpu);
+    gfx3d::run_battle(battle);
+}
+
+
+#[cfg(not(target_arch = "wasm32"))]
 fn run_terminal(battle: BattleState) -> ExitCode {
     match terminal::run_battle(battle) {
         Ok(()) => ExitCode::SUCCESS,
@@ -70,6 +86,7 @@ fn run_terminal(battle: BattleState) -> ExitCode {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn run_gfx3d_with_fallback(battle: BattleState) -> ExitCode {
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -89,6 +106,7 @@ fn run_gfx3d_with_fallback(battle: BattleState) -> ExitCode {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn run_terminal_3d(battle: BattleState) -> ExitCode {
     match terminal_3d::run_battle(battle) {
         Ok(()) => ExitCode::SUCCESS,
@@ -99,6 +117,7 @@ fn run_terminal_3d(battle: BattleState) -> ExitCode {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn run_gfx3d_box_with_fallback(battle: BattleState) -> ExitCode {
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -116,4 +135,5 @@ fn run_gfx3d_box_with_fallback(battle: BattleState) -> ExitCode {
         }
     }
 }
+
 

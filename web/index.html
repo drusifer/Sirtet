@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sirtet — Tetris WebAssembly (WASM)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #e0f2fe;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 24px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+            z-index: 10;
+        }
+        .title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .badge {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            outline: none;
+        }
+        footer {
+            padding: 8px 24px;
+            background: rgba(15, 23, 42, 0.9);
+            border-top: 1px solid rgba(56, 189, 248, 0.15);
+            font-size: 0.85rem;
+            color: #94a3b8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .controls {
+            display: flex;
+            gap: 16px;
+        }
+        .key {
+            background: rgba(255, 255, 255, 0.1);
+            color: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="title">SIRTET — TETRIS BATTLE MODE</div>
+        <div class="badge">WebAssembly (WASM / WebGL)</div>
+    </header>
+    
+    <div id="canvas-container">
+        <canvas id="glcanvas" tabindex="1"></canvas>
+    </div>
+
+    <footer>
+        <div class="controls">
+            <span>P1: <span class="key">WASD</span> / <span class="key">Space</span></span>
+            <span>P2: <span class="key">Arrows</span> / <span class="key">Enter</span></span>
+            <span>3D Rotate: <span class="key">X</span> <span class="key">Y</span> <span class="key">Z</span></span>
+        </div>
+        <div>
+            <span>Restart: <span class="key">R</span></span> | <span>Quit: <span class="key">Q</span> / <span class="key">Esc</span></span>
+        </div>
+    </footer>
+
+    <script src="mq_js_bundle.js"></script>
+    <script>
+        load("tetris.wasm");
+    </script>
+</body>
+</html>

@@ -7,11 +7,13 @@ pub struct CpuMove {
     pub target_x: i32,
 }
 
-pub struct CpuAgent;
+pub struct CpuAgent {
+    plan: Option<CpuMove>,
+}
 
 impl CpuAgent {
     pub fn new() -> Self {
-        CpuAgent
+        CpuAgent { plan: None }
     }
 
     pub fn compute_best_move(&self, game: &Game) -> Option<CpuMove> {
@@ -101,22 +103,39 @@ impl CpuAgent {
     }
 
 
-    pub fn make_move(&self, game: &mut Game) {
-        if let Some(m) = self.compute_best_move(game) {
-            for _ in 0..m.target_rotations {
-                game.rotate();
-            }
-            let active_x = game.active().x;
-            if active_x < m.target_x {
-                for _ in 0..(m.target_x - active_x) {
-                    game.move_right();
+    /// Advances the CPU's plan for the active piece by exactly one action per call
+    /// (one rotation, one horizontal step, or the final drop), so the piece is seen
+    /// sliding/rotating into place across ticks instead of teleporting there.
+    pub fn make_move(&mut self, game: &mut Game) {
+        if game.state() != crate::game::GameState::Playing {
+            self.plan = None;
+            return;
+        }
+
+        let target = match self.plan {
+            Some(m) => m,
+            None => match self.compute_best_move(game) {
+                Some(m) => {
+                    self.plan = Some(m);
+                    m
                 }
-            } else if active_x > m.target_x {
-                for _ in 0..(active_x - m.target_x) {
-                    game.move_left();
-                }
-            }
+                None => return,
+            },
+        };
+
+        if game.active().rotation != target.target_rotations as u8 {
+            game.rotate();
+            return;
+        }
+
+        let active_x = game.active().x;
+        if active_x < target.target_x {
+            game.move_right();
+        } else if active_x > target.target_x {
+            game.move_left();
+        } else {
             game.hard_drop();
+            self.plan = None;
         }
     }
 }
@@ -140,13 +159,28 @@ mod tests {
     }
 
     #[test]
-    fn test_cpu_agent_make_move() {
+    fn test_cpu_agent_make_move_locks_piece_within_a_few_ticks() {
         let mut game = Game::new();
-        let agent = CpuAgent::new();
-        agent.make_move(&mut game);
+        let mut agent = CpuAgent::new();
+        for _ in 0..20 {
+            agent.make_move(&mut game);
+        }
         let has_occupied = (0..WIDTH as i32)
             .any(|x| (0..HEIGHT as i32).any(|y| game.board().cell(x, y).is_some()));
         assert!(has_occupied);
+    }
+
+    #[test]
+    fn test_cpu_agent_make_move_is_incremental_not_instant() {
+        let mut game = Game::new();
+        let mut agent = CpuAgent::new();
+        agent.make_move(&mut game);
+        let has_occupied = (0..WIDTH as i32)
+            .any(|x| (0..HEIGHT as i32).any(|y| game.board().cell(x, y).is_some()));
+        assert!(
+            !has_occupied,
+            "a single make_move call should take one step, not lock the piece"
+        );
     }
 }
 

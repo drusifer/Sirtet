@@ -93,11 +93,8 @@ async fn abattle_main(battle: BattleState) {
             && is_key_pressed(KeyCode::Enter) { p2_game.hard_drop(); }
 
         if now - last_tick >= interval {
-            if battle.mode == GameMode::VsCpu {
-                use ::rand::RngExt;
-                if ::rand::rng().random_range(0..10) < 3 {
-                    p2_game.move_x(if ::rand::rng().random_range(0..2) == 0 { 1 } else { -1 });
-                }
+            if battle.mode == GameMode::VsCpu && macroquad::rand::gen_range(0, 10) < 3 {
+                p2_game.move_x(if macroquad::rand::gen_range(0, 2) == 0 { 1 } else { -1 });
             }
 
             p1_game.tick();
