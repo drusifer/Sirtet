@@ -12,8 +12,6 @@ mod terminal_3d;
 use std::process::ExitCode;
 
 use tetris::battle::BattleState;
-#[cfg(target_arch = "wasm32")]
-use tetris::battle::GameMode;
 use tetris::cli::{self, RendererChoice};
 
 
@@ -68,10 +66,34 @@ fn main() -> ExitCode {
     }
 }
 
+// The WASM build has no CLI/picker, so it needs to offer a renderer choice (2D Neon Grid vs 3D
+// Spatial Box) itself, alongside the mode choice — both on one combined options screen.
+// macroquad only allows one `Window::from_config` call per module lifetime, so this owns that
+// single window and drives both renderers' `run_match` from one shared loop rather than calling
+// either renderer's standalone `run_app` (which would each try to open their own window).
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    let battle = BattleState::new(GameMode::VsCpu);
-    gfx3d::run_battle(battle);
+    macroquad::Window::from_config(gfx3d::window_conf(), wasm_app_main());
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn wasm_app_main() {
+    use tetris::menu::{OptionsScreen, RendererKind};
+
+    loop {
+        let (renderer, mode) = match OptionsScreen::new().run_until_choice().await {
+            Some(rm) => rm,
+            None => return, // window closed while on the options screen
+        };
+
+        let quit_to_menu = match renderer {
+            RendererKind::NeonGrid2D => gfx3d::run_match(mode).await,
+            RendererKind::SpatialBox3D => gfx3d_box::run_match(mode).await,
+        };
+        if !quit_to_menu {
+            return; // window closed mid-match
+        }
+    }
 }
 
 
@@ -90,9 +112,9 @@ fn run_terminal(battle: BattleState) -> ExitCode {
 fn run_gfx3d_with_fallback(battle: BattleState) -> ExitCode {
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    let battle_clone = battle.clone();
+    let mode = battle.mode;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        gfx3d::run_battle(battle_clone);
+        gfx3d::run_app(Some(mode));
     }));
 
     std::panic::set_hook(prev_hook);
@@ -121,9 +143,9 @@ fn run_terminal_3d(battle: BattleState) -> ExitCode {
 fn run_gfx3d_box_with_fallback(battle: BattleState) -> ExitCode {
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    let battle_clone = battle.clone();
+    let mode = battle.mode;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        gfx3d_box::run_battle(battle_clone);
+        gfx3d_box::run_app(Some(mode));
     }));
     std::panic::set_hook(prev_hook);
 

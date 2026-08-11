@@ -1,7 +1,9 @@
 use macroquad::prelude::*;
 
+use tetris::battle::{GameMode, MatchWinner};
 use tetris::camera::{OrbitCamera, ViewCubeGizmo};
 use tetris::fx::{format_clear_banner, ClearFx, LandingFx, ScoreBanner, FX_DURATION};
+use tetris::menu::{Menu, MenuAction, SingleScreen};
 use tetris::spatial_game::{
     Axis, GameState, SpatialGame, BOX_DEPTH, BOX_HEIGHT, BOX_WIDTH,
 };
@@ -29,7 +31,7 @@ fn block_world_pos(x: i8, y: i8, z: i8) -> Vec3 {
     block_world_pos_at(x, y, z, 0.0)
 }
 
-fn window_conf() -> Conf {
+pub fn window_conf() -> Conf {
     Conf {
         window_title: "Sirtet — 3D Spatial Box".to_owned(),
         window_width: 1024,
@@ -42,64 +44,141 @@ fn window_conf() -> Conf {
     }
 }
 
-use tetris::battle::{BattleState, GameMode, MatchWinner};
-
-#[allow(dead_code)]
-pub fn run(game: SpatialGame) {
-    macroquad::Window::from_config(window_conf(), amain(game));
+/// Runs the full standalone app: main menu (mode select) -> match -> pause/game-over -> back to
+/// menu, looping until the window closes. See `gfx3d::run_app` for the `initial_mode` contract
+/// — identical here. For a multi-renderer orchestrator (the WASM build), call `run_match`
+/// directly instead.
+pub fn run_app(initial_mode: Option<GameMode>) {
+    macroquad::Window::from_config(window_conf(), run_app_async(initial_mode));
 }
 
-pub fn run_battle(battle: BattleState) {
-    macroquad::Window::from_config(window_conf(), abattle_main(battle));
-}
+async fn run_app_async(initial_mode: Option<GameMode>) {
+    let mut pending_mode = initial_mode;
+    loop {
+        let mode = match pending_mode.take() {
+            Some(m) => m,
+            None => match Menu::main_menu().run_until_choice().await {
+                Some(MenuAction::StartMode(m)) => m,
+                _ => return, // window closed while on the main menu
+            },
+        };
 
-async fn abattle_main(battle: BattleState) {
-    if battle.mode == GameMode::Single {
-        amain(SpatialGame::new()).await;
-        return;
+        if !run_match(mode).await {
+            return; // window closed
+        }
+        // else: player chose "Quit to Main Menu" from the pause/game-over menu — loop back.
     }
+}
 
+/// Runs one match to completion in `mode`. Returns `true` if the player chose "Quit to Main
+/// Menu", `false` if the window was closed. See `gfx3d::run_match` — same contract.
+pub async fn run_match(mode: GameMode) -> bool {
+    if mode == GameMode::Single {
+        amain(SpatialGame::new()).await;
+        true
+    } else {
+        abattle_main(mode).await
+    }
+}
+
+enum BattleScreen {
+    Playing,
+    Paused(Menu),
+    GameOver(Menu, MatchWinner),
+}
+
+async fn abattle_main(mode: GameMode) -> bool {
     let orbit_cam = OrbitCamera::default_3d_box();
     let mut p1_game = SpatialGame::new();
     let mut p2_game = SpatialGame::new();
     let mut last_tick = get_time();
+    let mut screen = BattleScreen::Playing;
 
     loop {
-        let now = get_time();
-        let interval = (tetris::spatial_game::spatial_gravity_interval_ms(p1_game.level) as f64) / 1000.0;
-
-        if is_quit_requested() || is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
-            break;
+        if is_quit_requested() {
+            return false;
         }
 
-        if is_key_pressed(KeyCode::R) {
-            p1_game = SpatialGame::new();
-            p2_game = SpatialGame::new();
-            last_tick = now;
-        }
+        let mut quit_to_menu = false;
 
-        // P1 Controls
-        if is_key_pressed(KeyCode::A) | is_key_pressed(KeyCode::Left) { p1_game.move_x(-1); }
-        if is_key_pressed(KeyCode::D) | is_key_pressed(KeyCode::Right) { p1_game.move_x(1); }
-        if is_key_pressed(KeyCode::W) | is_key_pressed(KeyCode::Up) { p1_game.move_y(-1); }
-        if is_key_pressed(KeyCode::S) | is_key_pressed(KeyCode::Down) { p1_game.move_y(1); }
-        if is_key_pressed(KeyCode::X) { p1_game.rotate(Axis::X); }
-        if is_key_pressed(KeyCode::Y) { p1_game.rotate(Axis::Y); }
-        if is_key_pressed(KeyCode::Z) { p1_game.rotate(Axis::Z); }
-        if is_key_pressed(KeyCode::Space) { p1_game.hard_drop(); }
+        match &mut screen {
+            BattleScreen::Playing => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = BattleScreen::Paused(Menu::pause_menu());
+                } else if is_key_pressed(KeyCode::R) {
+                    screen = BattleScreen::Paused(Menu::pause_menu_restart_selected());
+                } else {
+                    // P1 Controls
+                    if is_key_pressed(KeyCode::A) | is_key_pressed(KeyCode::Left) { p1_game.move_x(-1); }
+                    if is_key_pressed(KeyCode::D) | is_key_pressed(KeyCode::Right) { p1_game.move_x(1); }
+                    if is_key_pressed(KeyCode::W) | is_key_pressed(KeyCode::Up) { p1_game.move_y(-1); }
+                    if is_key_pressed(KeyCode::S) | is_key_pressed(KeyCode::Down) { p1_game.move_y(1); }
+                    if is_key_pressed(KeyCode::X) { p1_game.rotate(Axis::X); }
+                    if is_key_pressed(KeyCode::Y) { p1_game.rotate(Axis::Y); }
+                    if is_key_pressed(KeyCode::Z) { p1_game.rotate(Axis::Z); }
+                    if is_key_pressed(KeyCode::Space) { p1_game.hard_drop(); }
 
-        // P2 Controls (Local)
-        if battle.mode == GameMode::TwoPlayerLocal
-            && is_key_pressed(KeyCode::Enter) { p2_game.hard_drop(); }
+                    // P2 Controls (Local)
+                    if mode == GameMode::TwoPlayerLocal && is_key_pressed(KeyCode::Enter) {
+                        p2_game.hard_drop();
+                    }
 
-        if now - last_tick >= interval {
-            if battle.mode == GameMode::VsCpu && macroquad::rand::gen_range(0, 10) < 3 {
-                p2_game.move_x(if macroquad::rand::gen_range(0, 2) == 0 { 1 } else { -1 });
+                    let now = get_time();
+                    let interval = (tetris::spatial_game::spatial_gravity_interval_ms(p1_game.level) as f64) / 1000.0;
+                    if now - last_tick >= interval {
+                        if mode == GameMode::VsCpu && macroquad::rand::gen_range(0, 10) < 3 {
+                            p2_game.move_x(if macroquad::rand::gen_range(0, 2) == 0 { 1 } else { -1 });
+                        }
+                        p1_game.tick();
+                        p2_game.tick();
+                        last_tick = now;
+                    }
+
+                    let p1_dead = p1_game.state == GameState::GameOver;
+                    let p2_dead = p2_game.state == GameState::GameOver;
+                    if p1_dead || p2_dead {
+                        let winner = if p1_dead && !p2_dead {
+                            if mode == GameMode::VsCpu { MatchWinner::Cpu } else { MatchWinner::Player2 }
+                        } else if p2_dead && !p1_dead {
+                            MatchWinner::Player1
+                        } else {
+                            MatchWinner::None
+                        };
+                        screen = BattleScreen::GameOver(Menu::game_over_menu(), winner);
+                    }
+                }
             }
-
-            p1_game.tick();
-            p2_game.tick();
-            last_tick = now;
+            BattleScreen::Paused(menu) => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = BattleScreen::Playing;
+                } else if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Resume => screen = BattleScreen::Playing,
+                        MenuAction::Restart => {
+                            p1_game = SpatialGame::new();
+                            p2_game = SpatialGame::new();
+                            last_tick = get_time();
+                            screen = BattleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
+            BattleScreen::GameOver(menu, _winner) => {
+                if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Restart => {
+                            p1_game = SpatialGame::new();
+                            p2_game = SpatialGame::new();
+                            last_tick = get_time();
+                            screen = BattleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::Resume | MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
         }
 
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
@@ -112,22 +191,20 @@ async fn abattle_main(battle: BattleState) {
         draw_spatial_grid_at(&p2_game, 3.5);
 
         set_default_camera();
-        draw_battle_spatial_hud(&p1_game, &p2_game, battle.mode);
-
-        let p1_dead = p1_game.state == GameState::GameOver;
-        let p2_dead = p2_game.state == GameState::GameOver;
-        if p1_dead || p2_dead {
-            let winner = if p1_dead && !p2_dead {
-                if battle.mode == GameMode::VsCpu { MatchWinner::Cpu } else { MatchWinner::Player2 }
-            } else if p2_dead && !p1_dead {
-                MatchWinner::Player1
-            } else {
-                MatchWinner::None
-            };
-            draw_spatial_match_winner_overlay(winner);
+        draw_battle_spatial_hud(&p1_game, &p2_game, mode);
+        if let BattleScreen::GameOver(_, winner) = &screen {
+            draw_spatial_match_winner_title(*winner);
+        }
+        if let BattleScreen::Paused(menu) | BattleScreen::GameOver(menu, _) = &screen {
+            menu.draw(screen_width(), screen_height());
         }
 
+        // See gfx3d.rs's abattle_main — always cross a frame boundary before returning so the
+        // next screen doesn't see a stale "just pressed" Enter.
         next_frame().await;
+        if quit_to_menu {
+            return true;
+        }
     }
 }
 
@@ -143,39 +220,91 @@ async fn amain(mut game: SpatialGame) {
     let mut banner = ScoreBanner::new();
 
     let mut prev_active_z = game.active_piece.z;
+    let mut screen = SingleScreen::Playing;
 
     loop {
         let now = get_time();
-        let interval = (tetris::spatial_game::spatial_gravity_interval_ms(game.level) as f64) / 1000.0;
 
         if is_quit_requested() {
-            break;
+            return;
         }
 
-        if handle_input(&mut game) {
-            break;
-        }
+        let mut quit_to_menu = false;
 
-        if now - last_tick >= interval {
-            game.tick();
-            last_tick = now;
+        match &mut screen {
+            SingleScreen::Playing => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = SingleScreen::Paused(Menu::pause_menu());
+                } else if is_key_pressed(KeyCode::R) {
+                    screen = SingleScreen::Paused(Menu::pause_menu_restart_selected());
+                } else {
+                    handle_playing_input(&mut game);
 
-            // Detect genuine 3D piece lock landing
-            if game.active_piece.z < prev_active_z {
-                landing_fx.trigger(now);
-                orbit_cam.add_shake(0.35);
+                    let interval = (tetris::spatial_game::spatial_gravity_interval_ms(game.level) as f64) / 1000.0;
+                    if now - last_tick >= interval {
+                        game.tick();
+                        last_tick = now;
+
+                        // Detect genuine 3D piece lock landing
+                        if game.active_piece.z < prev_active_z {
+                            landing_fx.trigger(now);
+                            orbit_cam.add_shake(0.35);
+                        }
+                    }
+                    prev_active_z = game.active_piece.z;
+
+                    // Detect 3D layer clear event immediately on lock
+                    if game.last_layers_cleared > 0 && clear_fx.start_time.is_none() {
+                        let count = game.last_layers_cleared;
+                        clear_fx.trigger(now, count);
+                        orbit_cam.add_shake(0.85);
+
+                        let msg = format_clear_banner(count, true);
+                        banner.trigger(msg.to_string(), now);
+                    }
+
+                    if game.state == GameState::GameOver {
+                        screen = SingleScreen::GameOver(Menu::game_over_menu());
+                    }
+                }
             }
-        }
-        prev_active_z = game.active_piece.z;
-
-        // Detect 3D layer clear event immediately on lock
-        if game.last_layers_cleared > 0 && clear_fx.start_time.is_none() {
-            let count = game.last_layers_cleared;
-            clear_fx.trigger(now, count);
-            orbit_cam.add_shake(0.85);
-
-            let msg = format_clear_banner(count, true);
-            banner.trigger(msg.to_string(), now);
+            SingleScreen::Paused(menu) => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = SingleScreen::Playing;
+                } else if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Resume => screen = SingleScreen::Playing,
+                        MenuAction::Restart => {
+                            game = SpatialGame::new();
+                            landing_fx = LandingFx::new();
+                            clear_fx = ClearFx::new();
+                            banner = ScoreBanner::new();
+                            prev_active_z = game.active_piece.z;
+                            last_tick = get_time();
+                            screen = SingleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
+            SingleScreen::GameOver(menu) => {
+                if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Restart => {
+                            game = SpatialGame::new();
+                            landing_fx = LandingFx::new();
+                            clear_fx = ClearFx::new();
+                            banner = ScoreBanner::new();
+                            prev_active_z = game.active_piece.z;
+                            last_tick = get_time();
+                            screen = SingleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::Resume | MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
         }
 
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
@@ -218,6 +347,10 @@ async fn amain(mut game: SpatialGame) {
         // Draw Layer Clear Score Banner
         banner.draw(now);
 
+        if let SingleScreen::Paused(menu) | SingleScreen::GameOver(menu) = &screen {
+            menu.draw(screen_width(), screen_height());
+        }
+
         let reset_requested = viewcube.update_and_draw(&mut orbit_cam.yaw, &mut orbit_cam.pitch);
         if reset_requested {
             orbit_cam = OrbitCamera::default_3d_box();
@@ -225,11 +358,16 @@ async fn amain(mut game: SpatialGame) {
 
         orbit_cam.update(viewcube.is_dragging);
 
+        // See abattle_main's quit_to_menu handling — always cross a frame boundary before
+        // returning so the next screen doesn't see a stale "just pressed" Enter.
         next_frame().await;
+        if quit_to_menu {
+            return;
+        }
     }
 }
 
-fn handle_input(game: &mut SpatialGame) -> bool {
+fn handle_playing_input(game: &mut SpatialGame) {
     if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
         game.move_x(-1);
     }
@@ -254,14 +392,6 @@ fn handle_input(game: &mut SpatialGame) -> bool {
     if is_key_pressed(KeyCode::Space) {
         game.hard_drop();
     }
-    if is_key_pressed(KeyCode::P) {
-        game.toggle_pause();
-    }
-    if is_key_pressed(KeyCode::R) {
-        game.restart();
-    }
-
-    is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape)
 }
 
 fn block_world_pos_at(x: i8, y: i8, z: i8, offset_x: f32) -> Vec3 {
@@ -353,7 +483,7 @@ const HUD_COLOR: Color = Color::new(0.6, 0.95, 1.0, 1.0);
 
 fn draw_hud(game: &SpatialGame) {
     draw_text("3D SPATIAL BOX TETRIS", 20.0, 30.0, 24.0, HUD_COLOR);
-    draw_text("CAMERA: ViewCube Drag / Mouse Drag / IJKL | Scroll / +/- Zoom | H/C: Home Reset", 20.0, 56.0, 18.0, Color::new(1.0, 0.85, 0.2, 1.0));
+    draw_text("CAMERA: ViewCube Drag / Mouse Drag / IJKL | Scroll / +/- Zoom | H/C: Home Reset | 1-5: Presets", 20.0, 56.0, 18.0, Color::new(1.0, 0.85, 0.2, 1.0));
 
     let base_y = screen_height() - 90.0;
     draw_text(format!("SCORE: {}", game.score), 20.0, base_y, 24.0, HUD_COLOR);
@@ -382,24 +512,20 @@ fn draw_battle_spatial_hud(p1: &SpatialGame, p2: &SpatialGame, mode: GameMode) {
 
     // Controls legend
     draw_text("P1: WASD/Arrows (X/Y) | XYZ (Rotate 3D) | Space (Drop Z)", 40.0, screen_height() - 40.0, 16.0, HUD_COLOR);
-    draw_text("R: Restart | Q/Esc: Quit", screen_width() / 2.0 - 100.0, screen_height() - 20.0, 16.0, WHITE);
+    draw_text("Esc: Pause Menu | R: Pause (Restart)", screen_width() / 2.0 - 140.0, screen_height() - 20.0, 16.0, WHITE);
 }
 
-fn draw_spatial_match_winner_overlay(winner: MatchWinner) {
-    if winner == MatchWinner::None { return; }
-    let cx = screen_width() / 2.0;
-    let cy = screen_height() / 2.0;
+/// Draws just the winner headline above the game-over menu box (the menu itself provides the
+/// Restart/Main Menu actions, so this only needs to say who won).
+fn draw_spatial_match_winner_title(winner: MatchWinner) {
     let title = match winner {
         MatchWinner::Player1 => "PLAYER 1 WINS!",
         MatchWinner::Player2 => "PLAYER 2 WINS!",
         MatchWinner::Cpu => "CPU WINS!",
         MatchWinner::None => return,
     };
-    let bw = 360.0;
-    let bh = 140.0;
-    draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
-    draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.9, 0.1, 1.0));
-    draw_text(title, cx - 110.0, cy - 10.0, 36.0, Color::new(1.0, 0.9, 0.1, 1.0));
-    draw_text("Press R to play again", cx - 100.0, cy + 30.0, 22.0, WHITE);
+    let cx = screen_width() / 2.0;
+    let cy = screen_height() / 2.0;
+    draw_text(title, cx - 110.0, cy - 130.0, 36.0, Color::new(1.0, 0.9, 0.1, 1.0));
 }
 

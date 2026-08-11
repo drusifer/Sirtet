@@ -6,6 +6,7 @@ use tetris::camera::{OrbitCamera, ViewCubeGizmo};
 use tetris::cpu_ai::CpuAgent;
 use tetris::fx::{format_clear_banner, ClearFx, LandingFx, ScoreBanner, FX_DURATION};
 use tetris::game::{Game, GameState};
+use tetris::menu::{Menu, MenuAction, SingleScreen};
 
 const CELL_SIZE: f32 = 0.5;
 const BOARD_ORIGIN_X: f32 = -(WIDTH as f32 * CELL_SIZE) / 2.0;
@@ -38,7 +39,7 @@ fn cell_world_pos_at(x: i32, y: f32, offset_x: f32) -> Vec3 {
     )
 }
 
-fn window_conf() -> Conf {
+pub fn window_conf() -> Conf {
     Conf {
         window_title: "Sirtet — Neon Grid".to_owned(),
         window_width: 1024,
@@ -51,73 +52,147 @@ fn window_conf() -> Conf {
     }
 }
 
-#[allow(dead_code)]
-pub fn run(game: Game) {
-    let mut battle = BattleState::new(GameMode::Single);
-    battle.player1 = game;
-    run_battle(battle);
+/// Runs the full standalone app: main menu (mode select) -> match -> pause/game-over -> back to
+/// menu, looping until the window closes. `initial_mode` bypasses the main menu on the very
+/// first entry when the caller already decided a mode (native CLI/picker); `None` always shows
+/// the menu first. For an entry point that needs to offer more than this one renderer (the WASM
+/// build, which lets the player switch between the 2D and 3D views), call `run_match` directly
+/// from a shared orchestrator instead of this function.
+pub fn run_app(initial_mode: Option<GameMode>) {
+    macroquad::Window::from_config(window_conf(), run_app_async(initial_mode));
 }
 
-pub fn run_battle(battle: BattleState) {
-    macroquad::Window::from_config(window_conf(), abattle_main(battle));
-}
+async fn run_app_async(initial_mode: Option<GameMode>) {
+    let mut pending_mode = initial_mode;
+    loop {
+        let mode = match pending_mode.take() {
+            Some(m) => m,
+            None => match Menu::main_menu().run_until_choice().await {
+                Some(MenuAction::StartMode(m)) => m,
+                _ => return, // window closed while on the main menu
+            },
+        };
 
-async fn abattle_main(mut battle: BattleState) {
-    if battle.mode == GameMode::Single {
-        amain(battle.player1).await;
-        return;
+        if !run_match(mode).await {
+            return; // window closed
+        }
+        // else: player chose "Quit to Main Menu" from the pause/game-over menu — loop back.
     }
+}
 
+/// Runs one match to completion in `mode`. Returns `true` if the player chose "Quit to Main
+/// Menu" (the caller should show a menu and may call this again), `false` if the window was
+/// closed. Shared by `run_app`'s own standalone loop above and by external multi-renderer
+/// orchestrators (used by the WASM build to offer both this 2D view and the 3D spatial box).
+pub async fn run_match(mode: GameMode) -> bool {
+    if mode == GameMode::Single {
+        amain(Game::new()).await;
+        // amain currently always returns via its own Q/Esc quit; treat that as "back to menu"
+        // rather than "window closed" — a genuine window-close is caught by the caller's next
+        // menu-loop iteration (its own is_quit_requested() check), so nothing is lost.
+        true
+    } else {
+        abattle_main(BattleState::new(mode)).await
+    }
+}
+
+enum BattleScreen {
+    Playing,
+    Paused(Menu),
+    GameOver(Menu),
+}
+
+/// Runs one battle match. Returns `true` if the player chose "Quit to Main Menu" (caller should
+/// loop back to the main menu), `false` if the window was closed entirely.
+async fn abattle_main(mut battle: BattleState) -> bool {
     let orbit_cam = OrbitCamera::default_2d_fancy();
     let mut last_tick = get_time();
-
     let mut cpu_agent = CpuAgent::new();
+    let mut screen = BattleScreen::Playing;
 
     loop {
-        let now = get_time();
-        let interval = (battle.player1.gravity_interval_ms() as f64 / 1000.0).max(0.001);
-
-        if is_quit_requested() || is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
-            break;
+        if is_quit_requested() {
+            return false;
         }
 
-        if is_key_pressed(KeyCode::R) {
-            let mode = battle.mode;
-            battle = BattleState::new(mode);
-            last_tick = now;
-        }
+        let mut quit_to_menu = false;
 
-        // P1 Controls
-        if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
-            battle.player1.move_left();
-        }
-        if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
-            battle.player1.move_right();
-        }
-        if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
-            battle.player1.soft_drop();
-        }
-        if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
-            battle.player1.rotate();
-        }
-        if is_key_pressed(KeyCode::Space) {
-            battle.p1_hard_drop();
-        }
+        match &mut screen {
+            BattleScreen::Playing => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = BattleScreen::Paused(Menu::pause_menu());
+                } else if is_key_pressed(KeyCode::R) {
+                    screen = BattleScreen::Paused(Menu::pause_menu_restart_selected());
+                } else {
+                    // P1 Controls
+                    if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
+                        battle.player1.move_left();
+                    }
+                    if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
+                        battle.player1.move_right();
+                    }
+                    if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
+                        battle.player1.soft_drop();
+                    }
+                    if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
+                        battle.player1.rotate();
+                    }
+                    if is_key_pressed(KeyCode::Space) {
+                        battle.p1_hard_drop();
+                    }
 
-        // P2 Controls (Local)
-        if battle.mode == GameMode::TwoPlayerLocal && is_key_pressed(KeyCode::Enter) {
-            battle.p2_hard_drop();
-        }
+                    // P2 Controls (Local)
+                    if battle.mode == GameMode::TwoPlayerLocal && is_key_pressed(KeyCode::Enter) {
+                        battle.p2_hard_drop();
+                    }
 
-        if now - last_tick >= interval {
-            if battle.mode == GameMode::VsCpu
-                && let Some(ref mut p2) = battle.player2
-                && p2.state() == GameState::Playing
-            {
-                cpu_agent.make_move(p2);
+                    let now = get_time();
+                    let interval = (battle.player1.gravity_interval_ms() as f64 / 1000.0).max(0.001);
+                    if now - last_tick >= interval {
+                        if battle.mode == GameMode::VsCpu
+                            && let Some(ref mut p2) = battle.player2
+                            && p2.state() == GameState::Playing
+                        {
+                            cpu_agent.make_move(p2);
+                        }
+                        battle.tick();
+                        last_tick = now;
+                    }
+
+                    if battle.winner != MatchWinner::None {
+                        screen = BattleScreen::GameOver(Menu::game_over_menu());
+                    }
+                }
             }
-            battle.tick();
-            last_tick = now;
+            BattleScreen::Paused(menu) => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = BattleScreen::Playing;
+                } else if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Resume => screen = BattleScreen::Playing,
+                        MenuAction::Restart => {
+                            battle = BattleState::new(battle.mode);
+                            last_tick = get_time();
+                            screen = BattleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
+            BattleScreen::GameOver(menu) => {
+                if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Restart => {
+                            battle = BattleState::new(battle.mode);
+                            last_tick = get_time();
+                            screen = BattleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::Resume | MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
         }
 
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
@@ -130,9 +205,22 @@ async fn abattle_main(mut battle: BattleState) {
 
         set_default_camera();
         draw_battle_hud(&battle);
-        draw_match_winner_overlay(battle.winner);
+        if let BattleScreen::GameOver(_) = &screen {
+            draw_match_winner_title(battle.winner);
+        }
+        if let BattleScreen::Paused(menu) | BattleScreen::GameOver(menu) = &screen {
+            menu.draw(screen_width(), screen_height());
+        }
 
+        // Cross a frame boundary before returning, even on quit — otherwise the same Enter
+        // press that confirmed "Quit to Main Menu" is still "just pressed" on the next screen's
+        // very first input poll (see Menu::run_until_choice for the same class of bug), so the
+        // options screen shown right after this would instantly auto-confirm its defaults
+        // instead of ever being shown to the player.
         next_frame().await;
+        if quit_to_menu {
+            return true;
+        }
     }
 }
 
@@ -148,39 +236,91 @@ async fn amain(mut game: Game) {
     let mut banner = ScoreBanner::new();
 
     let mut prev_active_y = game.active().y;
+    let mut screen = SingleScreen::Playing;
 
     loop {
         let now = get_time();
-        let interval = (game.gravity_interval_ms() as f64 / 1000.0).max(0.001);
 
         if is_quit_requested() {
-            break;
+            return;
         }
 
-        if handle_input(&mut game) {
-            break;
-        }
+        let mut quit_to_menu = false;
 
-        if now - last_tick >= interval {
-            game.tick();
-            last_tick = now;
+        match &mut screen {
+            SingleScreen::Playing => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = SingleScreen::Paused(Menu::pause_menu());
+                } else if is_key_pressed(KeyCode::R) {
+                    screen = SingleScreen::Paused(Menu::pause_menu_restart_selected());
+                } else {
+                    handle_playing_input(&mut game);
 
-            // Detect genuine piece lock landing
-            if game.active().y < prev_active_y {
-                landing_fx.trigger(now);
-                orbit_cam.add_shake(0.35);
+                    let interval = (game.gravity_interval_ms() as f64 / 1000.0).max(0.001);
+                    if now - last_tick >= interval {
+                        game.tick();
+                        last_tick = now;
+
+                        // Detect genuine piece lock landing
+                        if game.active().y < prev_active_y {
+                            landing_fx.trigger(now);
+                            orbit_cam.add_shake(0.35);
+                        }
+                    }
+                    prev_active_y = game.active().y;
+
+                    // Detect line clear event immediately on lock
+                    let cleared = game.last_lines_cleared();
+                    if cleared > 0 && clear_fx.start_time.is_none() {
+                        clear_fx.trigger(now, cleared);
+                        orbit_cam.add_shake(0.85);
+
+                        let msg = format_clear_banner(cleared, false);
+                        banner.trigger(msg.to_string(), now);
+                    }
+
+                    if game.state() == GameState::GameOver {
+                        screen = SingleScreen::GameOver(Menu::game_over_menu());
+                    }
+                }
             }
-        }
-        prev_active_y = game.active().y;
-
-        // Detect line clear event immediately on lock
-        let cleared = game.last_lines_cleared();
-        if cleared > 0 && clear_fx.start_time.is_none() {
-            clear_fx.trigger(now, cleared);
-            orbit_cam.add_shake(0.85);
-
-            let msg = format_clear_banner(cleared, false);
-            banner.trigger(msg.to_string(), now);
+            SingleScreen::Paused(menu) => {
+                if is_key_pressed(KeyCode::Escape) {
+                    screen = SingleScreen::Playing;
+                } else if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Resume => screen = SingleScreen::Playing,
+                        MenuAction::Restart => {
+                            game = Game::new();
+                            landing_fx = LandingFx::new();
+                            clear_fx = ClearFx::new();
+                            banner = ScoreBanner::new();
+                            prev_active_y = game.active().y;
+                            last_tick = get_time();
+                            screen = SingleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
+            SingleScreen::GameOver(menu) => {
+                if let Some(action) = menu.update() {
+                    match action {
+                        MenuAction::Restart => {
+                            game = Game::new();
+                            landing_fx = LandingFx::new();
+                            clear_fx = ClearFx::new();
+                            banner = ScoreBanner::new();
+                            prev_active_y = game.active().y;
+                            last_tick = get_time();
+                            screen = SingleScreen::Playing;
+                        }
+                        MenuAction::QuitToMenu => quit_to_menu = true,
+                        MenuAction::Resume | MenuAction::StartMode(_) => {}
+                    }
+                }
+            }
         }
 
         clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
@@ -221,6 +361,10 @@ async fn amain(mut game: Game) {
         // Draw Floating Score Banner
         banner.draw(now);
 
+        if let SingleScreen::Paused(menu) | SingleScreen::GameOver(menu) = &screen {
+            menu.draw(screen_width(), screen_height());
+        }
+
         let reset_requested = viewcube.update_and_draw(&mut orbit_cam.yaw, &mut orbit_cam.pitch);
         if reset_requested {
             orbit_cam = OrbitCamera::default_2d_fancy();
@@ -228,11 +372,16 @@ async fn amain(mut game: Game) {
 
         orbit_cam.update(viewcube.is_dragging);
 
+        // See abattle_main's quit_to_menu handling — always cross a frame boundary before
+        // returning so the next screen doesn't see a stale "just pressed" Enter.
         next_frame().await;
+        if quit_to_menu {
+            return;
+        }
     }
 }
 
-fn handle_input(game: &mut Game) -> bool {
+fn handle_playing_input(game: &mut Game) {
     if is_key_pressed(KeyCode::Left) {
         game.move_left();
     }
@@ -248,14 +397,6 @@ fn handle_input(game: &mut Game) -> bool {
     if is_key_pressed(KeyCode::Space) {
         game.hard_drop();
     }
-    if is_key_pressed(KeyCode::P) {
-        game.toggle_pause();
-    }
-    if is_key_pressed(KeyCode::R) {
-        game.restart();
-    }
-
-    is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape)
 }
 
 fn draw_board(game: &Game) {
@@ -357,7 +498,6 @@ fn draw_hud(game: &mut Game) {
     draw_next_preview(game);
     draw_stats(game);
     draw_controls_legend();
-    draw_status_overlay(game);
 }
 
 fn draw_next_preview(game: &mut Game) {
@@ -392,9 +532,9 @@ fn draw_controls_legend() {
         "Mouse Drag/IJKL Orbit View",
         "Scroll / +/-    Zoom View",
         "H / C           Home Reset View",
-        "P     pause",
-        "R     restart",
-        "Q/Esc quit",
+        "1-5             Camera Presets",
+        "Esc   Pause Menu",
+        "R     Pause (Restart)",
     ];
     let origin_x = screen_width() - 250.0;
     for (i, line) in lines.iter().enumerate() {
@@ -402,54 +542,19 @@ fn draw_controls_legend() {
     }
 }
 
-fn draw_status_overlay(game: &Game) {
-    let cx = screen_width() / 2.0;
-    let cy = screen_height() / 2.0;
-    match game.state() {
-        GameState::Paused => {
-            let bw = 240.0;
-            let bh = 80.0;
-            draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
-            draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, HUD_COLOR);
-            draw_text("PAUSED", cx - 60.0, cy + 10.0, 40.0, WHITE);
-        }
-        GameState::GameOver => {
-            let bw = 360.0;
-            let bh = 160.0;
-            draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
-            draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.2, 0.3, 1.0));
-            draw_text("GAME OVER", cx - 110.0, cy - 20.0, 40.0, Color::new(1.0, 0.2, 0.3, 1.0));
-            draw_text(
-                format!("Final score: {}", game.score()),
-                cx - 100.0,
-                cy + 20.0,
-                24.0,
-                WHITE,
-            );
-            draw_text("Press R to restart", cx - 100.0, cy + 50.0, 24.0, HUD_COLOR);
-        }
-        GameState::Playing => {}
-    }
-}
 
-fn draw_match_winner_overlay(winner: MatchWinner) {
-    if winner == MatchWinner::None {
-        return;
-    }
-    let cx = screen_width() / 2.0;
-    let cy = screen_height() / 2.0;
+/// Draws just the winner headline above the game-over menu box (the menu itself provides the
+/// Restart/Main Menu actions, so this only needs to say who won).
+fn draw_match_winner_title(winner: MatchWinner) {
     let title = match winner {
         MatchWinner::Player1 => "PLAYER 1 WINS!",
         MatchWinner::Player2 => "PLAYER 2 WINS!",
         MatchWinner::Cpu => "CPU WINS!",
         MatchWinner::None => return,
     };
-    let bw = 360.0;
-    let bh = 140.0;
-    draw_rectangle(cx - bw / 2.0, cy - bh / 2.0, bw, bh, Color::new(0.0, 0.0, 0.0, 0.85));
-    draw_rectangle_lines(cx - bw / 2.0, cy - bh / 2.0, bw, bh, 2.0, Color::new(1.0, 0.9, 0.1, 1.0));
-    draw_text(title, cx - 110.0, cy - 10.0, 36.0, Color::new(1.0, 0.9, 0.1, 1.0));
-    draw_text("Press R to play again", cx - 100.0, cy + 30.0, 22.0, WHITE);
+    let cx = screen_width() / 2.0;
+    let cy = screen_height() / 2.0;
+    draw_text(title, cx - 110.0, cy - 130.0, 36.0, Color::new(1.0, 0.9, 0.1, 1.0));
 }
 
 fn draw_battle_hud(battle: &BattleState) {
@@ -487,7 +592,7 @@ fn draw_battle_hud(battle: &BattleState) {
     };
     draw_text("P1: WASD / Space (Hard Drop)", 40.0, screen_height() - 40.0, 16.0, HUD_COLOR);
     draw_text(p2_controls, screen_width() - 240.0, screen_height() - 40.0, 16.0, HUD_COLOR);
-    draw_text("R: Restart | Q/Esc: Quit", screen_width() / 2.0 - 100.0, screen_height() - 20.0, 16.0, WHITE);
+    draw_text("Esc: Pause Menu | R: Pause (Restart)", screen_width() / 2.0 - 140.0, screen_height() - 20.0, 16.0, WHITE);
 }
 
 

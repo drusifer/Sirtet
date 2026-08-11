@@ -202,4 +202,143 @@ src/
 ## Testability
 `battle.rs`, `cpu_ai.rs`, and garbage injection in `board.rs` are pure logic with zero I/O dependencies. Covered 100% by unit tests (`cargo test`) for dual-engine tick, garbage calculation, garbage row generation, CPU AI candidate scoring, and match victory conditions.
 
+---
+
+# Sprint 6 Architecture Addendum: WebAssembly (WASM) Target & Web Shell
+
+**Author:** Morpheus (Tech Lead)
+**Status:** Approved (Gate 2 passed)
+**Date:** 2026-08-09
+
+## Architecture Overview
+
+Sprint 6 enables cross-compilation of the Tetris game engine and Macroquad GPU renderers to the `wasm32-unknown-unknown` WebAssembly target.
+
+```
++-------------------------------------------------------------+
+|                      Browser Window                         |
+|  +-------------------------------------------------------+  |
+|  |                 web/index.html                        |  |
+|  |   +-----------------------------------------------+   |  |
+|  |   |           HTML5 <canvas id="glcanvas">        |   |  |
+|  |   |                                               |   |  |
+|  |   |  +-----------------------------------------+  |   |  |
+|  |   |  |     WASM Bundle (tetris.wasm)           |  |   |  |
+|  |   |  |  +-----------------------------------+  |  |   |  |
+|  |   |  |  | Game Engine & Macroquad WebGL     |  |  |   |  |
+|  |   |  |  +-----------------------------------+  |  |   |  |
+|  |   |  +-----------------------------------------+  |   |  |
+|  |   +-----------------------------------------------+   |  |
+|  +-------------------------------------------------------+  |
++-------------------------------------------------------------+
+```
+
+## Key Technical Design Components
+
+| Component | Responsibility |
+|-----------|----------------|
+| **WASM Target Target Build** | `cargo build --target wasm32-unknown-unknown --release` compiles the game binary and lib into WebAssembly. |
+| **WebGL / Miniquad Glue** | Uses `miniquad` / `macroquad` built-in JS loader glue to link WebGL canvas context with WASM module. |
+| **HTML5 Canvas Container** | `web/index.html` embeds `<canvas id="glcanvas">` styled responsively with CSS flexbox/grid for fullscreen web gaming. |
+| **Makefile Web Targets** | Adds `make web` / `make wasm` to build WASM bundle and copy artifacts to `web/`, and `make serve` to run a local web server via `python3 -m http.server 8080`. |
+
+---
+
+# Sprint 7 Architecture: In-Game Menu System
+
+**Author:** Morpheus (Tech Lead)
+**Status:** Proposed — pending Gate 2 (Smith)
+**Date:** 2026-08-11
+
+## Problem
+
+Sprint 6 shipped a WASM entry point that hardcodes `GameMode::VsCpu` — the only mode selector
+(`picker.rs`) is a terminal/crossterm pre-game screen that isn't compiled for `wasm32`, so browser
+players have no way to reach Single Player or Local 2-Player at all. Gate 1 (Smith) additionally
+found that `gfx3d.rs`/`gfx3d_box.rs` bind `Q`/`Esc` to an instant, unconfirmed quit and `R` to an
+instant, unconfirmed restart today — both must be superseded, not left standing next to a new menu.
+
+## Decision: One shared `Menu` widget, driven by a per-renderer `AppScreen` state machine
+
+Rather than build three bespoke menu screens (main menu, pause, game-over) per renderer, a single
+generic, renderer-agnostic menu component lives in the shared lib crate and is reused by both
+`gfx3d.rs` and `gfx3d_box.rs` — the only two renderers in scope (terminal renderers keep
+`picker.rs`, unaffected).
+
+```
+src/menu.rs (NEW, tetris::menu)
+  pub enum MenuAction { StartMode(GameMode), Resume, Restart, QuitToMenu }
+  pub struct Menu { title, options: Vec<(MenuAction, &str)>, selected: usize }
+    - Menu::main_menu()      -> 3 GameMode options
+    - Menu::pause_menu()     -> Resume / Restart / Quit to Main Menu
+    - Menu::game_over_menu() -> Restart / Main Menu
+    - .update() -> Option<MenuAction>   (Up/Down or W/S navigate, Enter confirms)
+    - .draw(screen_w, screen_h)         (2D screen-space overlay: draw_text/draw_rectangle,
+                                          same primitives already used for the existing HUD/
+                                          match-winner overlay — no 3D-specific code)
+```
+
+Each renderer owns its own small state machine on top of the shared widget:
+
+```rust
+enum AppScreen {
+    MainMenu(Menu),
+    Playing,
+    Paused(Menu),
+    GameOver(Menu),
+}
+```
+
+- `MainMenu`: no `BattleState` exists yet. `StartMode(mode)` constructs a fresh `BattleState` and
+  transitions to `Playing`.
+- `Playing`: existing gameplay loop, gated `if let AppScreen::Playing`. Esc → `Paused` (pause_menu,
+  Resume pre-selected). `R` → `Paused` (pause_menu, **Restart pre-selected** — replaces instant
+  restart per Smith's Gate 1 amendment). Gravity/CPU-AI ticks only run in this branch.
+- `Paused`: Esc again *or* selecting Resume → back to `Playing` (toggle, per Smith). Restart →
+  fresh `BattleState`, same mode, → `Playing`. Quit to Main Menu → drop `BattleState`, →
+  `MainMenu`.
+- `GameOver`: entered when `battle.winner` is set (existing detection, unchanged) instead of just
+  drawing a static overlay. Restart → same mode, → `Playing`. Main Menu → `MainMenu`.
+
+## Entry point change
+
+`gfx3d::run_battle(battle: BattleState)` and `gfx3d_box::run_battle(battle: BattleState)` are
+replaced by `run_app(initial_mode: Option<GameMode>)`. **[Revised after Smith's Gate 2 reject]:**
+the original draft always started at `MainMenu` and silently discarded any explicit `--mode` flag,
+which is a Nielsen #1/#9 violation (a flag that does nothing with no feedback). The parameter fixes
+this: `Some(mode)` — an explicit choice, from CLI flags or the interactive picker — skips
+`MainMenu` and starts `Playing` directly; `None` shows `MainMenu`. An explicit choice is honored
+exactly once; an absent one is asked exactly once — never both, never silently dropped.
+
+- wasm `fn main()`: calls `gfx3d::run_app(None)` — the WASM entry point has no CLI/picker, so it
+  always shows `MainMenu`. Drops the hardcoded `BattleState::new(GameMode::VsCpu)`.
+- `run_gfx3d_with_fallback` / `run_gfx3d_box_with_fallback`: still receive `battle: BattleState`
+  from the existing picker/CLI flow (signatures unchanged, zero `cli.rs`/`picker.rs` churn), but
+  now call `gfx3d::run_app(Some(battle.mode))` — pass the already-decided mode (`BattleState`
+  already carries a `mode: GameMode` field) through instead of discarding it, and `run_app`
+  constructs its own fresh `BattleState` for that mode internally rather than taking one as a
+  parameter, so `MainMenu`'s `StartMode` path and the CLI/picker's pre-decided path both end up
+  constructing `BattleState` the same single way. Terminal/terminal_3d renderers are untouched and
+  keep `--mode` fully functional as-is.
+
+## Files touched
+
+| File | Change |
+|------|--------|
+| `src/menu.rs` | **NEW** — `Menu`/`MenuAction`, shared by both GPU renderers |
+| `src/lib.rs` | `+ pub mod menu;` |
+| `src/gfx3d.rs` | `AppScreen` state machine, `run_app()` replacing `run_battle()`, remove instant Q/Esc/R handling |
+| `src/gfx3d_box.rs` | Same pattern as `gfx3d.rs` |
+| `src/main.rs` | wasm `main()` and the two `_with_fallback` wrappers call `run_app()` |
+| `web/index.html` | Footer control legend updated to match new bindings (no more "Quit: Q/Esc" advertising dead behavior) |
+
+## Testability
+
+`Menu::update()`/`.draw()` split keeps input handling headless-testable (no macroquad window
+needed to unit-test selection wrap-around and `MenuAction` resolution). `AppScreen` transitions in
+each renderer remain integration-level, verified by Smith's Gate-close usability pass (macroquad
+render loops aren't unit-testable directly, consistent with existing `gfx3d.rs`/`gfx3d_box.rs`
+coverage strategy).
+
+
 

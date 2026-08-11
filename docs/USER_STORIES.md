@@ -325,4 +325,108 @@ Gate 1 review, same pattern as Sprint 1's US-8).
 - A match results overlay displays "PLAYER 1 WINS!" / "PLAYER 2 WINS!" / "CPU WINS!" alongside both final scores.
 - Pressing `R` restarts the battle match; pressing `Q`/`Esc` returns to main menu or exits cleanly.
 
+---
+
+# Sprint 6: WebAssembly (WASM) Browser App Target
+
+**Owner:** Cypher (PM)
+**Status:** Approved (Gate 1 & 2 passed)
+**Date:** 2026-08-09
+
+## US-29: WebAssembly Compilation Target (`wasm32-unknown-unknown`)
+**As a** web developer / player, **I want** the Tetris game to compile to WebAssembly (`wasm32-unknown-unknown`), **so that** the game engine and renderers run directly in web browsers without native desktop dependencies.
+
+**AC:**
+- Project compiles cleanly for `wasm32-unknown-unknown` target.
+- Macroquad GPU 2D and 3D renderers build to WebAssembly without compilation errors.
+- Automation in `Makefile` provides `make web` / `make wasm` targets.
+
+## US-30: HTML5 Canvas Shell & Web Assets
+**As a** browser player, **I want** an HTML5 canvas container and modern WebGL wrapper, **so that** I can launch Tetris directly from any web browser.
+
+**AC:**
+- `web/index.html` provides a responsive canvas layout, title, and styling.
+- Miniquad/Macroquad JS glue loads and initializes the WASM bundle cleanly.
+- Page handles viewport resizing and window focusing automatically.
+
+## US-31: Local Development Web Server (`make serve`)
+**As a** developer / QA, **I want** a `make serve` target to quickly launch a local HTTP server, **so that** I can test and verify the WebAssembly app locally in a browser.
+
+**AC:**
+- `make serve` starts a local HTTP server on port 8080 (or available port) serving the WASM web app.
+- Automatically handles correct MIME types (`application/wasm`).
+
+## US-32: Browser Controls & Full Game Mode Parity
+**As a** player in a web browser, **I want** full control parity (keyboard controls, mode selection, battle mode, 3D viewports), **so that** the web app provides the exact same experience as native desktop.
+
+**AC:**
+- Keyboard input (WASD, Arrow keys, Space, Enter, XYZ rotation keys) translates cleanly in browser canvas.
+- Single Player, VS CPU, and Local 2-Player battle modes work in WebAssembly canvas.
+
+---
+
+# Sprint 7: In-Game Menu System
+
+**Owner:** Cypher (PM)
+**Status:** Draft for Smith review (Gate 1)
+**Date:** 2026-08-11
+
+**Motivation:** US-32 claimed mode-selection parity in the browser, but the WASM entry point
+(`main.rs`'s `#[cfg(target_arch = "wasm32")] fn main()`) hardcodes `GameMode::VsCpu` with no
+selection mechanism — browser players cannot currently reach Single Player or Local 2-Player at
+all. The existing mode/renderer picker (`picker.rs`) only covers the terminal-native launch path
+(crossterm, pre-game, not compiled for `wasm32`), so it can't close this gap. This sprint adds a
+menu system rendered *inside* the macroquad/GPU engine itself — the one code path shared by native
+and WASM builds — so mode selection, pause, restart, and quit all work identically everywhere,
+including the browser.
+
+**Scope:** `gfx3d.rs` (primary — the WASM entry point) and `gfx3d_box.rs` (native GPU 3D box, same
+engine family, kept at parity). The terminal renderers (`terminal.rs`, `terminal_3d.rs`) already
+have equivalent pre-game selection via `picker.rs` and are out of scope for this sprint.
+
+## US-33: In-Game Main Menu for Mode Selection
+**As a** player launching the game — especially in the browser, where no pre-game picker exists —
+**I want** an in-game main menu to choose Single Player, VS CPU, or Local 2-Player before the
+match starts, **so that** I'm not locked into a single hardcoded mode.
+
+**AC:**
+- On launch, `gfx3d.rs` (and `gfx3d_box.rs`) show a menu screen with the 3 `GameMode` options and
+  a clear "start" action, before any board is drawn.
+- Menu is navigable with Up/Down (or W/S) + Enter, and renders identically on native and WASM
+  builds (no platform-specific input or crossterm dependency).
+- Selecting a mode starts a fresh `BattleState` in that mode.
+
+## US-34: Pause Menu — Resume, Restart, Quit to Menu
+**As a** player mid-match, **I want** to pause and choose Resume, Restart Match, or Quit to Main
+Menu, **so that** I can back out of or restart a match without killing the browser tab or process.
+
+**AC:**
+- Pressing a dedicated key (e.g. Esc) during `GameState::Playing` opens a pause overlay; gameplay
+  and gravity ticks stop while it's open.
+- Resume returns to the match exactly as it was paused.
+- Restart Match starts a new `BattleState` in the same mode that was active.
+- Quit to Main Menu returns to the US-33 menu screen (never a hard process exit in the WASM build,
+  since there is no OS process for a browser tab to return to).
+- Pressing Esc again while the pause overlay is open resumes play (same key toggles it open/closed)
+  — a player who pauses by reflex must be able to get back into the match the same way, without
+  hunting for a different key.
+- **[Smith, HCI #4/#5]** This pause menu formally supersedes the current instant, unconfirmed `Q`/
+  `Esc`-to-quit and `R`-to-restart bindings in `gfx3d.rs`/`gfx3d_box.rs` — those exit/restart the
+  match with zero confirmation today, which is itself an error-prevention gap this story is
+  expected to close, not leave standing alongside a new menu. `R` during play opens the pause menu
+  (pre-selected on Restart) rather than restarting instantly; the footer control legend must be
+  updated to match the new bindings so it doesn't advertise dead behavior.
+
+## US-35: Game Over → Restart / Main Menu Flow
+**As a** player whose match just ended, **I want** the game-over screen to offer Restart and Main
+Menu actions, **so that** I can immediately play again without reloading the page or restarting
+the binary.
+
+**AC:**
+- The existing match-winner overlay gains two selectable actions: Restart (same mode) and Main
+  Menu (returns to US-33).
+- Keyboard-navigable the same way as US-33/US-34 (consistent input pattern across all three menus).
+- No dead end: every terminal game state (win, loss, pause) has a visible, reachable way back to
+  either another match or the main menu.
+
 

@@ -1,5 +1,30 @@
 use macroquad::prelude::*;
 
+const CAMERA_PRESET_KEYS: [KeyCode; 5] = [
+    KeyCode::Key1,
+    KeyCode::Key2,
+    KeyCode::Key3,
+    KeyCode::Key4,
+    KeyCode::Key5,
+];
+
+/// (yaw, pitch) pairs for the 1-5 camera preset hotkeys, in radians. Distance/target are left to
+/// whichever renderer owns the `OrbitCamera` instance, so the same five orientations reasonably
+/// suit both the flat 2D board and the deeper 3D spatial box.
+const CAMERA_PRESETS: [(f32, f32); 5] = [
+    (0.0, 0.12),                         // 1: Front (matches the default startup angle)
+    (0.0, 0.7),                          // 2: High angle
+    (std::f32::consts::FRAC_PI_2, 0.2),  // 3: Side
+    (std::f32::consts::FRAC_PI_4, 0.45), // 4: Corner (isometric-ish)
+    (0.0, 1.5),                          // 5: Fully top-down (looking straight down the well)
+];
+
+/// `camera_3d()`'s `up` vector is a fixed (0, 1, 0) — at pitch exactly ±FRAC_PI_2 the view
+/// direction becomes parallel to it (gimbal lock), which can make the render flip or jitter.
+/// Presets stay strictly inside this bound so "top-down" is a clean overhead view, not the
+/// literal singularity.
+const MAX_PRESET_PITCH: f32 = 1.55;
+
 pub struct OrbitCamera {
     pub yaw: f32,
     pub pitch: f32,
@@ -13,8 +38,8 @@ impl OrbitCamera {
         Self {
             yaw: 0.0,
             pitch: 0.12,
-            distance: 13.0,
-            target: vec3(0.0, -0.5, 0.0),
+            distance: 15.5,
+            target: vec3(0.0, 0.0, 0.0),
             shake_intensity: 0.0,
         }
     }
@@ -34,6 +59,8 @@ impl OrbitCamera {
     }
 
     pub fn update(&mut self, gizmo_handled: bool) {
+        self.apply_preset_hotkeys();
+
         if self.shake_intensity > 0.0 {
             self.shake_intensity = (self.shake_intensity - 0.04).max(0.0);
         }
@@ -55,6 +82,20 @@ impl OrbitCamera {
         }
         if is_key_down(KeyCode::Equal) { self.distance = (self.distance - 0.2).max(4.0); }
         if is_key_down(KeyCode::Minus) { self.distance = (self.distance + 0.2).min(30.0); }
+    }
+
+    /// Jumps to a named (yaw, pitch) orientation preset when its number key (1-5) was just
+    /// pressed. Called from `update()`, so every renderer using `OrbitCamera` gets presets for
+    /// free — no per-renderer wiring or duplicated preset tables. Distance/target are untouched
+    /// (presets only change orientation, like the ViewCube gizmo's drag does), so they compose
+    /// with each renderer's own default distance/target and with manual zoom.
+    fn apply_preset_hotkeys(&mut self) {
+        for (key, &(yaw, pitch)) in CAMERA_PRESET_KEYS.iter().zip(CAMERA_PRESETS.iter()) {
+            if is_key_pressed(*key) {
+                self.yaw = yaw;
+                self.pitch = pitch.clamp(-MAX_PRESET_PITCH, MAX_PRESET_PITCH);
+            }
+        }
     }
 
     pub fn camera_3d(&self) -> Camera3D {
@@ -263,5 +304,27 @@ mod tests {
         assert!((rx - 1.0).abs() < 1e-4);
         assert!((ry - 0.0).abs() < 1e-4);
         assert!((rz - 0.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn camera_presets_have_one_key_per_preset() {
+        assert_eq!(CAMERA_PRESET_KEYS.len(), CAMERA_PRESETS.len());
+    }
+
+    #[test]
+    fn preset_one_matches_the_default_front_facing_angle() {
+        let cam = OrbitCamera::default_2d_fancy();
+        assert_eq!(CAMERA_PRESETS[0], (cam.yaw, cam.pitch));
+    }
+
+    #[test]
+    fn no_preset_pitch_reaches_the_up_vector_singularity() {
+        for &(_, pitch) in CAMERA_PRESETS.iter() {
+            assert!(
+                pitch.abs() < MAX_PRESET_PITCH,
+                "preset pitch {pitch} is too close to vertical — camera_3d()'s fixed up vector \
+                 becomes degenerate near +/-FRAC_PI_2"
+            );
+        }
     }
 }
