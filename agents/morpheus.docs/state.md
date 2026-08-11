@@ -2,34 +2,42 @@
 
 ## Context
 ### Recent Decisions
-- Architecture Addendum for Sprint 5 recorded in `docs/ARCHITECTURE.md`.
-- Side-by-side dual board spatial viewports integrated across `gfx3d.rs`, `terminal_3d.rs`, and `gfx3d_box.rs`.
+- Sprint 7 architecture (both gates passed, both Stage-1 gates): shared `Menu`/`MenuAction`
+  widget in `src/menu.rs`, `AppScreen{MainMenu,Playing,Paused,GameOver}` per renderer,
+  `run_app(initial_mode: Option<GameMode>)`. Full design in `docs/ARCHITECTURE.md`.
+- Phase 1 code review: **PASS.** `move_selection`/`confirm` are correctly split from the
+  macroquad-dependent `update`/`draw` (matches the architecture's testability requirement),
+  `pause_menu_restart_selected()` reuses `pause_menu()` via struct-update syntax instead of
+  duplicating the option list. No SOLID violations, no smells worth flagging for a widget this
+  size. Trin's non-blocking wrap-around test-coverage note (game_over_menu untested at length 2)
+  acknowledged but not worth blocking on — logic is length-agnostic by construction.
 
 ### Key Findings
-- Zero architecture violations, clean separation of battle state and renderers.
+- None new.
 
 ### Important Notes
-- Prepared for shutdown.
+- None.
 
 ## Current Task
-**Status:** Architecture review and shutdown complete.
-**Assigned to:** Morpheus -> User
-**Started:** 2026-08-09
+**Status:** Phase 1 approved. Phase 2 (`gfx3d.rs` integration) assigned to Neo.
+**Assigned to:** Morpheus -> Neo
+**Started:** 2026-08-11
 
 ### Task Description
-Session shutdown preparation.
+Sprint 7 Stage 2 Phase Bloop: code review Phase 1, hand off Phase 2.
 
 ### Progress
-- [x] Sprint 5 architecture addendum approved.
-- [x] All 4 renderers verified for battle mode and side-by-side rendering.
-- [x] Clean test and lint gates passed.
+- [x] Reviewed `src/menu.rs` for architectural correctness.
+- [x] Approved, handed Phase 2 to Neo.
 
 ### Blockers
-None
+None.
 
 ## Next Steps
 ### Immediate Next Action
-Awaiting next architectural assignment.
+Await Neo's Phase 2 (`gfx3d.rs` `AppScreen` integration + `run_app(initial_mode)` + `main.rs`/
+`web/index.html` wiring), then Trin UAT on the full state-machine flow, then this review step
+again before Phase 3.
 
 ### Waiting On
-User / Cypher.
+Neo.

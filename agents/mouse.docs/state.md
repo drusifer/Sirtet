@@ -2,34 +2,42 @@
 
 ## Context
 ### Recent Decisions
-- Sprint 5 completed (5/5 phases delivered).
-- Task board (`task.md`) updated with 100% completed tasks.
+- Sprint 7 (In-Game Menu System) broken into 3 phases in `task.md`, each sized 1-2 tasks:
+  1. Shared `Menu` widget (`src/menu.rs`) — foundation, unit-testable in isolation.
+  2. `gfx3d.rs` integration (WASM entry point — primary/highest-priority target).
+  3. `gfx3d_box.rs` integration (native parity, mirrors Phase 2).
+- Sequenced `menu.rs` first since both renderer phases depend on it; `gfx3d.rs` before
+  `gfx3d_box.rs` since gfx3d.rs is the WASM entry point (the actual motivating gap for this
+  sprint) and gfx3d_box.rs mirrors the same pattern once it's proven out.
 
 ### Key Findings
-- Zero sprint blockers, fast execution cycle.
+- No Tank/deploy scope in this sprint — pure app-code change, no new env vars/services/CI.
 
 ### Important Notes
-- Prepared for shutdown.
+- None.
 
 ## Current Task
-**Status:** Sprint 5 task board closed. Ready for shutdown.
-**Assigned to:** Mouse -> User
-**Started:** 2026-08-09
+**Status:** Phase breakdown written to `task.md`, awaiting Morpheus's Step 3a plan review.
+**Assigned to:** Mouse -> Morpheus
+**Started:** 2026-08-11
 
 ### Task Description
-Session shutdown preparation.
+Sprint 7 planning, Stage 1 Step 3: break Sprint 7 into phases in `task.md`.
 
 ### Progress
-- [x] Maintained task board (`task.md`).
-- [x] All sprint phases completed and checked off.
-- [x] Team retrospectives collected.
+- [x] Phase 1: `src/menu.rs` shared widget.
+- [x] Phase 2: `gfx3d.rs` integration + `main.rs`/`web/index.html` wiring.
+- [x] Phase 3: `gfx3d_box.rs` integration + `main.rs` wiring.
+- [ ] Morpheus Step 3a plan review.
+- [ ] Phase Bloop (Neo -> Trin -> Morpheus) x3.
 
 ### Blockers
-None
+None.
 
 ## Next Steps
 ### Immediate Next Action
-Awaiting Sprint 6 planning.
+Morpheus: review the phase breakdown in `task.md` for alignment with the Sprint 7 architecture
+addendum in `docs/ARCHITECTURE.md`, then hand off Phase 1 to Neo.
 
 ### Waiting On
-User.
+Morpheus.

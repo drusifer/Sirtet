@@ -1,7 +1,7 @@
 ---
 name: make-discover
-description: Self-discovery guide for a project's Makefile targets. Run `make help` (or read the Makefile) to see what's available — there's no bob-authored target list to rely on.
-triggers: ["*make help", "*make discover", "*build help"]
+description: Self-discovery guide for a project's Makefile targets. Run `bobp make help` (or read the Makefile) to see what's available — there's no bob-authored target list to rely on.
+triggers: ["*bobp make help", "*make discover", "*build help"]
 ---
 
 One-line summary: This project's Makefile is not bob-managed — discover its targets the normal way, then invoke them via the `make` skill's `bobp make <target>`.
@@ -12,10 +12,10 @@ One-line summary: This project's Makefile is not bob-managed — discover its ta
 
 Bob doesn't install, template, or own this project's `Makefile` — it's an ordinary Makefile
 that belongs to the project. There's no second file, no `ifdef` block, and no guaranteed
-`make help` target contributed by bob. To find out what's available:
+`bobp make help` target contributed by bob. To find out what's available:
 
 ```bash
-make help                              # if the project defines one — often the fastest path
+bobp make help                              # if the project defines one — often the fastest path
 grep -E '^[a-zA-Z_-]+:' Makefile       # otherwise, read the target names directly
 cat Makefile                           # or just read the whole thing if it's short
 ```

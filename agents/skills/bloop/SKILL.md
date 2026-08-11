@@ -171,7 +171,7 @@ Chain: Tank → Trin (smoke) → report
 Every persona in a loop posts a handoff before switching:
 
 ```bash
-make chat MSG="<summary> @NextPersona *command" PERSONA="<Name>" CMD="<prefix> handoff" TO="<next>"
+bobp chat "<summary> @NextPersona *command" --persona <Name> --cmd "<prefix> handoff" --to <next>
 ```
 
 The next persona reads CHAT.md on entry — if the handoff isn't there, they start blind.
@@ -186,6 +186,6 @@ To minimize token usage and prevent coordination overhead:
 3. **Active Anti-Loop Guard**: If any loop iteration (e.g. Neo fix → Trin test fail → Neo fix) repeats **more than twice** for the same issue without resolution, the loop must be paused. The active agent must post logs, describe the blocker to the user, and request manual intervention rather than attempting a third cycle.
 4. **Fast-Track Sprint Planning**: If a sprint plan consists only of small maintenance items, bypass the full 6-step planning chain. Cypher and Morpheus should compile stories and architecture details into a single document for unified approval by Smith, reducing the transition count.
 5. **No Protocol Re-Load**: Do NOT invoke `bob-protocol` at bloop entry. The protocol is already active when bloop is triggered. Re-loading it wastes ~6k tokens per invocation.
-6. **No Sub-Skill Re-Invocation**: Do not call `Skill(make, ...)` or `Skill(chat, ...)` more than once per session. Each call reloads the full SKILL.md body unnecessarily. After the first load, run `make <target>` and `make chat MSG=...` via the Bash tool directly — always through make, never bypassing it. **This has actually been violated** (Sprint 1, Project Scalene: `Skill(make)` was called for `setup`, then called again later in the same session for `test` — the second call should have been a plain `Bash("make test")`). Before calling `Skill(make)` or `Skill(chat)`, check whether you already loaded it earlier in this same session — if so, use Bash directly instead.
+6. **No Sub-Skill Re-Invocation**: Do not call `Skill(make, ...)` or `Skill(chat, ...)` more than once per session. Each call reloads the full SKILL.md body unnecessarily. After the first load, run `bobp make <target>` and `bobp chat "..." --persona ... --cmd ... --to ...` via the Bash tool directly — always through `bobp`, never bypassing it. **This has actually been violated** (Sprint 1, Project Scalene: `Skill(make)` was called for `setup`, then called again later in the same session for `test` — the second call should have been a plain `Bash("bobp make test")`). Before calling `Skill(make)` or `Skill(chat)`, check whether you already loaded it earlier in this same session — if so, use Bash directly instead.
 7. **Context Budget Between Phases**: After each bloop phase completes, check the context percentage. If > 60%, explicitly warn the user and recommend `/clear` before the next phase. Ensure all state files are written before clearing.
 

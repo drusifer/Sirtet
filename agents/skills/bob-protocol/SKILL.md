@@ -40,7 +40,7 @@ Each persona is defined in `agents/<name>.docs/SKILL.md`:
 
 ### Step 1: Log User Message (ALWAYS FIRST)
 ```bash
-make chat MSG="<user's message>" PERSONA="User" CMD="request"
+bobp chat "<user's message>" --persona User --cmd request
 ```
 
 **Note on External Invocations**: Different AI harnesses use different prefixes for direct persona invocation (e.g., `@persona` or `/persona` in Gemini CLI, `/persona` in Claude, `$persona` in Codex). If you are invoked directly via such a command, you MUST log the invocation to `agents/CHAT.md` immediately upon entry if it has not already been logged. This ensures the shared team context is complete.
@@ -86,14 +86,14 @@ Execute one focused task. **Short iterations are key** — complete one thing, t
 
 ### Step 6: Post Response to Chat
 ```bash
-make chat MSG="<response>" PERSONA="<Name>" CMD="<command>" TO="<recipient>"
+bobp chat "<response>" --persona <Name> --cmd <command> --to <recipient>
 ```
 
 ### Step 7: Save State — HARD GATE (MANDATORY BEFORE ANY SWITCH)
 **Do not switch personas until both steps below are complete.**
 
 1. Write `agents/[persona].docs/state.md` — what was learned/decided, progress %, what's next, and exact resume instructions for a cold start, all in one file
-2. Post handoff: `make chat MSG="<summary> @Next *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
+2. Post handoff: `bobp chat "<summary> @Next *command" --persona <Name> --cmd handoff --to <next>`
 
 ---
 
@@ -109,9 +109,9 @@ For a **large, growing reference doc** (not `state.md` itself — those stay sma
 ### ENTRY (When Activating / Rapid Startup)
 1. Read `agents/CHAT.md` — last 10-20 messages
 2. Load `agents/[persona].docs/state.md`
-3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
+3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`bobp make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
 4. Verify that agent links are synced (run `setup_agent_links.py` if needed).
-5. Post your persona initialization message using `make chat` immediately.
+5. Post your persona initialization message using `bobp chat` immediately.
 6. If `agents/PROJECT.md` exists — read it for project capabilities
 
 ### WORK
@@ -132,7 +132,7 @@ When resuming after a context clear or new session with no memory:
 1. Read bottom 20 messages of `agents/CHAT.md` — find the last handoff
 2. Identify which persona was active and what command was pending
 3. Load that persona's `state.md`
-4. Post a resume message: `make chat MSG="Resuming <task> from last session." PERSONA="<Name>" CMD="resume"`
+4. Post a resume message: `bobp chat "Resuming <task> from last session." --persona <Name> --cmd resume`
 5. Continue from the `## Next Steps` section of `state.md` — do not restart from scratch
 
 If CHAT.md has no clear handoff, ask the user: "I'm resuming — what should I pick up?"
@@ -144,10 +144,10 @@ If CHAT.md has no clear handoff, ask the user: "I'm resuming — what should I p
 Use `@mentions` in CHAT.md to route work:
 
 ```bash
-make chat MSG="@Neo *swe impl Task 4" PERSONA="Morpheus" CMD="lead handoff" TO="Neo"
-make chat MSG="@Trin *qa test all" PERSONA="Neo" CMD="swe handoff" TO="Trin"
-make chat MSG="@Oracle *ora ask Have we seen this error before?" PERSONA="Neo" CMD="swe ask" TO="Oracle"
-make chat MSG="@Morpheus *lead decide <choice>" PERSONA="Trin" CMD="qa handoff" TO="Morpheus"
+bobp chat "@Neo *swe impl Task 4" --persona Morpheus --cmd "lead handoff" --to Neo
+bobp chat "@Trin *qa test all" --persona Neo --cmd "swe handoff" --to Trin
+bobp chat "@Oracle *ora ask Have we seen this error before?" --persona Neo --cmd "swe ask" --to Oracle
+bobp chat "@Morpheus *lead decide <choice>" --persona Trin --cmd "qa handoff" --to Morpheus
 ```
 
 ---
@@ -157,10 +157,10 @@ make chat MSG="@Morpheus *lead decide <choice>" PERSONA="Trin" CMD="qa handoff" 
 If a fix attempt fails:
 
 1. **STOP** — do not retry the same approach
-2. **Consult Oracle**: `make chat MSG="@Oracle *ora ask Have we seen this error before? Error: <error>" PERSONA="<Name>" CMD="ask" TO="Oracle"`
+2. **Consult Oracle**: `bobp chat "@Oracle *ora ask Have we seen this error before? Error: <error>" --persona <Name> --cmd ask --to Oracle`
 3. Read error logs carefully — understand the root cause
 4. ONE retry with a new approach
-5. If that also fails → escalate: `make chat MSG="Blocked after 2 attempts on <task>. Tried: <A>, <B>. Recommend: <C>. Awaiting user input." PERSONA="<Name>" CMD="blocked" TO="User"`
+5. If that also fails → escalate: `bobp chat "Blocked after 2 attempts on <task>. Tried: <A>, <B>. Recommend: <C>. Awaiting user input." --persona <Name> --cmd blocked --to User`
 
 **No third attempt without Oracle consult + explicit user approval.**
 

@@ -119,9 +119,9 @@ Invoke Smith with: `@Smith *user feedback <open question>`
 **ENTRY (When Activating / Rapid Startup):**
 1. Read `agents/CHAT.md` - Understand team context (last 10-20 messages)
 2. Load your own state (`agents/morpheus.docs/state.md`) — context, current task, and resume plan in one file.
-3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
+3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`bobp make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
 4. Verify that agent links are synced (run `setup_agent_links.py` if needed).
-5. Post your persona initialization message using `make chat` immediately.
+5. Post your persona initialization message using `bobp chat` immediately.
 
 **WORK:**
 7. Execute assigned tasks
@@ -129,7 +129,7 @@ Invoke Smith with: `@Smith *user feedback <open question>`
 
 **EXIT — HARD GATE: Save BEFORE switching (MANDATORY):**
 9. Update `agents/morpheus.docs/state.md` — architectural notes/decisions, progress %, exact next item, and step-by-step resume instructions for a cold start (Context, Current Task, Next Steps sections)
-10. Post handoff message: `make chat MSG="<summary> @NextPersona *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
+10. Post handoff message: `bobp chat "<summary> @NextPersona *command" --persona <Name> --cmd handoff --to <next>`
 
 **Do NOT switch or stop until steps 9-10 are written.**
 **State files are the only memory that survives context overflow or conversation restart.**
@@ -157,5 +157,5 @@ Invoke Smith with: `@Smith *user feedback <open question>`
 - **Edit** — update existing design docs
 
 ### Coordinating
-- `make chat MSG="<message>"` — post design proposals and decisions to CHAT.md
+- `bobp chat "<message>"` — post design proposals and decisions to CHAT.md
 

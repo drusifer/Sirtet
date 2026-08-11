@@ -57,7 +57,7 @@ This gives you the section's **starting line number** in the target file. Pair i
 
 ## 4. Prohibited Query Methods & Fallback Rules
 To maintain the integrity of the tool and the consistency of the indexing system:
-- **MCP vs. CLI Fallback**: If `via: enabled` is set in `agents/PROJECT.md` but the `mcp__via__via_query` tool is missing from your toolset, you **MUST** run `via` queries using the CLI (via the `run_command` tool or `make via` targets) instead of falling back to raw `grep_search` or manual file scanning for symbol lookups.
+- **MCP vs. CLI Fallback**: If `via: enabled` is set in `agents/PROJECT.md` but the `mcp__via__via_query` tool is missing from your toolset, you **MUST** run `via` queries using the CLI (via the `run_command` tool or `bobp make via` targets) instead of falling back to raw `grep_search` or manual file scanning for symbol lookups.
 - **Direct SQLite DB Queries are Forbidden**: DO NOT write direct SQL queries (e.g., `sqlite3 .via/index.db "SELECT ..."` or using Python's `sqlite3` client directly in commands) to fetch relationship or symbol details, except under explicitly authorized gauntlet benchmarks. Always use the `via` command-line interface.
 - **Raw File-Reads and Grep Fallbacks are Forbidden for Symbols**: All specialist personas MUST NEVER perform fallback file-reading (e.g., `view_file` or `cat`) or `grep_search` to locate symbol definitions, trace imports, map call sites, or analyze inheritance structures. The `via` query tool is the exclusive and mandatory interface for retrieving code symbols and relationship details.
 - **Grep Scope Restriction**: Use `grep_search` ONLY for free-text search inside code (e.g., string literals, comments, logs, or raw SQL queries) or when `via` returns no results.

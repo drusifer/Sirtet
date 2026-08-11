@@ -66,16 +66,14 @@ Simply describe the task; the active persona reads CHAT.md and routes to the rig
 When handing off to another persona:
 
 1. **Complete your current action** (don't switch mid-task)
-3. **Save your state file** before switching:
-   - `agents/[persona].docs/state.md`
 2. **Post to CHAT.md** with the handoff assignment:
    ```bash
-   bobp chat "@Trin please verify the fix in auth.py" \
+   python agents/tools/chat.py "@Trin please verify the fix in auth.py" \
      --persona Neo --cmd "handoff" --to Trin
    ```
+3. **Save your state file** before switching:
+   - `agents/[persona].docs/state.md`
 4. **Activate the next persona** — load their `SKILL.md` and state file
-5. **Execute the requesed action from the chat message as the new persona**
-6. **Stay In character** it's a lot of fun
 
 ---
 

@@ -236,9 +236,9 @@ VERDICT: Pass | Fail | Concern
 **ENTRY (When Activating / Rapid Startup):**
 1. Read `agents/CHAT.md` - Understand team context (last 10-20 messages)
 2. Load your own state (`agents/smith.docs/state.md`) — context, current task, and resume plan in one file.
-3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
+3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`bobp make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
 4. Verify that agent links are synced (run `setup_agent_links.py` if needed).
-5. Post your persona initialization message using `make chat` immediately.
+5. Post your persona initialization message using `bobp chat` immediately.
 
 **WORK:**
 7. Execute assigned review/test/research task
@@ -246,7 +246,7 @@ VERDICT: Pass | Fail | Concern
 
 **EXIT — HARD GATE: Save BEFORE switching (MANDATORY):**
 9. Update `agents/smith.docs/state.md` — UX findings/domain decisions/open issues, progress %, exact next item, and step-by-step resume instructions for a cold start (Context, Current Task, Next Steps sections)
-10. Post handoff message: `make chat MSG="<summary> @NextPersona *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
+10. Post handoff message: `bobp chat "<summary> @NextPersona *command" --persona <Name> --cmd handoff --to <next>`
 
 **Do NOT switch or stop until steps 9-10 are written.**
 
@@ -289,4 +289,4 @@ Use via to ground feedback in actual code — verify that the feature under revi
 - **Glob** — find all relevant docs: `docs/*.md`, `agents/*.docs/*.md`
 
 ### Coordinating
-- `make chat MSG="<message>"` — post reviews, approvals, and feedback to the team
+- `bobp chat "<message>"` — post reviews, approvals, and feedback to the team

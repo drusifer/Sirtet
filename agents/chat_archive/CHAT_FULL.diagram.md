@@ -222,3 +222,20 @@ sequenceDiagram
     Cypher->>All: pm launch — *pm launch sirtet-sprint-5-dual-scene.<br/>Side-by-side split screen viewports<br/>enabled across all 3D renderers (3d,<br/>terminal_3d, 3d_box)!
     Bob->>All: shutdown — Session shutdown preparation complete.<br/>All persona states saved, task.md<br/>updated, 61 unit tests passing, clippy 0<br/>warnings.
 ```
+
+---
+
+# CHAT_sprint6 — Sprint Archive
+
+## Summary
+
+Sprint 6: WebAssembly (WASM) browser target (wasm32-unknown-unknown), HTML5 canvas container (web/index.html), and local web server automation (make serve).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Morpheus
+    participant Neo
+    Note over Morpheus,Neo: 📅 2026-08-09
+    Morpheus->>Neo: lead handoff — Sprint 6 Plan approved by Morpheus &<br/>Smith. Phase 1 ready for implementation.<br/>@Neo *swe impl phase-1
+```

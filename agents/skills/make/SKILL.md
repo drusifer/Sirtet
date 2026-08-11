@@ -32,7 +32,7 @@ bobp make -vvv <target>         # show all output live
 ```
 
 The verbosity flag comes **before** the target (`bobp make -vv test`, not `bobp make test -vv`
-and not `make test V=-vv`) — `bobp make` parses its own argv, it does not pass `V=` through
+and not `bobp make test V=-vv`) — `bobp make` parses its own argv, it does not pass `V=` through
 to make.
 
 ## NEVER do these things
@@ -71,11 +71,11 @@ output**.
 
 ## Discover available targets
 
-This project's Makefile is not bob-managed, so there's no bob-authored `make help` guarantee.
+This project's Makefile is not bob-managed, so there's no bob-authored `bobp make help` guarantee.
 Check what the project itself defines:
 
 ```bash
-make help                              # if the project defines one
+bobp make help                              # if the project defines one
 grep -E '^[a-zA-Z_-]+:' Makefile       # otherwise, read the target names directly
 ```
 
