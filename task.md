@@ -1,12 +1,70 @@
-# Task Board — Tetris (Rust) Sprint 7 (In-Game Menu System)
+# Task Board — Tetris (Rust) Sprint 8 (Tech Debt)
 
 **Maintained by:** Mouse (SM)
-**Status:** Complete — all phases implemented and user-verified live (2D + 3D, native + WASM)
+**Status:** Complete — all 4 phases implemented, UAT'd, and reviewed. Live GUI smoke pass
+outstanding (this environment has no display to drive macroquad) — flagged to Smith for Stage 3.
 **Date:** 2026-08-11
 
-Cycle per phase: Neo implements (TDD) -> Trin UAT -> Morpheus review -> next phase.
+Cycle per phase: Neo implements -> Trin UAT -> Morpheus review -> next phase. Tier 2 (Minor/Tech
+Debt) sprint per `AGENT.md` rule 10 — planning fast-tracked (Cypher+Morpheus combined, Smith+Mouse
+combined), phase Bloop runs the normal way. All 4 phases are refactor-only: no user-facing
+behavior change, so each phase's "done" bar is build/lint/test clean + a live smoke pass, not new
+functional tests.
+
+## Phase 1 — Remove Verified Dead Code
+- [x] 1.1 Deleted `gfx3d.rs::cell_world_pos()`, `gfx3d_box.rs::block_world_pos()`,
+  `terminal.rs::run()` and their `#[allow(dead_code)]` attributes (all three confirmed zero
+  callers via grep before scoping).
+- [x] 1.2 Verified: `cargo build --all-targets`, `cargo clippy --all-targets`, `cargo test` all
+  clean with the `allow` attributes gone (proves they were actually dead, not just unreferenced by
+  grep).
+**Stories:** US-36
+
+## Phase 2 — Dedup Shared Piece-Color Palette
+- [x] 2.1 Moved the byte-identical `piece_color(id: u8) -> Color` (macroquad) out of `gfx3d.rs`
+  and `gfx3d_box.rs` into one shared `pub fn` in `menu.rs`; both renderers import it.
+- [x] 2.2 Verified via diff (shared fn is byte-identical to what was removed). **Live visual
+  smoke pass not done** — this environment has no display to run the GPU renderers; flagged for
+  Smith at Stage 3.
+**Stories:** US-37
+
+## Phase 3 — Dedup `amain`'s Pause/Game-Over Menu Dispatch
+- [x] 3.1 Extracted the near-identical `SingleScreen::Paused`/`SingleScreen::GameOver` handling
+  (~35 lines/file) from `gfx3d.rs::amain` and `gfx3d_box.rs::amain` into a shared `menu::
+  resolve_menu_action()`, parameterized over the one real difference (game-reset + active-piece-
+  position tracking: `Game`/`.active().y` vs `SpatialGame`/`.active_piece.z`) via a local
+  `restart` bool at each call site.
+- [x] 3.2 Both `amain` functions call the shared function; Trin re-verified existing menu tests +
+  added 5 new unit tests for `resolve_menu_action` (round-1 UAT reject, fixed same session).
+  **Live smoke pass (pause/resume/restart/quit-to-menu) not done** — no display in this
+  environment; flagged for Smith at Stage 3.
+**Stories:** US-38
+
+## Phase 4 — Reduce `amain`/`abattle_main` Complexity
+**[Corrected 2026-08-11]:** originally scoped as `run_app_async` (~320 lines) — that was a
+mis-measurement (grep missed `async fn`). `run_app_async` is actually ~20 lines and already
+clean. Real target, confirmed via `grep -n "^async fn \|^pub async fn "`: `amain` (~150 lines) and
+`abattle_main` (~120 lines), same shape in both files.
+- [x] 4.1 Split each of `gfx3d.rs`/`gfx3d_box.rs`'s `amain` and `abattle_main` into a named
+  per-iteration update function and a named per-iteration draw function, called once per loop
+  body. The `loop { ... next_frame().await ... }` structure itself stayed untouched (verified —
+  exactly one `next_frame().await` per function, same position) — it carries the frame-boundary
+  quit-to-menu pattern (see `neo.docs/state.md`), which depends on the exact position of the
+  yield point. Same decomposition shape in both files.
+- [x] 4.2 Verified: no behavior change, all 76 tests pass, clippy 0 warnings, native+wasm builds
+  clean.
+**Stories:** US-39
+
+**Deferred (out of scope, flagged for a future dedicated spike if pursued):** `game.rs`/
+`spatial_game.rs` state-machine duplication and `gfx3d.rs`/`gfx3d_box.rs` whole-file duplication
+(window setup, HUD drawing, battle loop) — different board representations make this a real
+architecture project, not a safe small-phase refactor.
 
 ---
+
+# Previous Sprints
+
+## Sprint 7 — In-Game Menu System (Complete — user-verified live, 2D+3D, native+WASM)
 
 ## Phase 1 — Shared `Menu` Widget (`src/menu.rs`)
 - [x] 1.1 Create `src/menu.rs`: `MenuAction` enum, `Menu` struct with `main_menu()`/`pause_menu()`/
@@ -51,10 +109,6 @@ dev server rather than a formal Trin UAT pass:
   per-renderer duplication), preset 5 tuned to a safe near-vertical top-down angle with a named
   `MAX_PRESET_PITCH` guard against the fixed-up-vector gimbal singularity.
 **Stories:** US-33 (extended scope), US-34, US-35
-
----
-
-# Previous Sprints
 
 ## Sprint 6 — WebAssembly Browser Target
 - [x] WASM target config (`wasm32-unknown-unknown`), `web/index.html` canvas shell +

@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use tetris::battle::{GameMode, MatchWinner};
 use tetris::camera::{OrbitCamera, ViewCubeGizmo};
 use tetris::fx::{format_clear_banner, ClearFx, LandingFx, ScoreBanner, FX_DURATION};
-use tetris::menu::{Menu, MenuAction, SingleScreen};
+use tetris::menu::{piece_color, resolve_menu_action, Menu, MenuAction, SingleScreen};
 use tetris::spatial_game::{
     Axis, GameState, SpatialGame, BOX_DEPTH, BOX_HEIGHT, BOX_WIDTH,
 };
@@ -12,24 +12,6 @@ const CUBE_SIZE: f32 = 0.85;
 const ORIGIN_X: f32 = -(BOX_WIDTH as f32 * CUBE_SIZE) / 2.0;
 const ORIGIN_Y: f32 = (BOX_HEIGHT as f32 * CUBE_SIZE) / 2.0;
 const ORIGIN_Z: f32 = -(BOX_DEPTH as f32 * CUBE_SIZE) / 2.0;
-
-fn piece_color(id: u8) -> Color {
-    match id {
-        1 => Color::new(0.0, 0.95, 1.0, 1.0),  // Cyan
-        2 => Color::new(1.0, 0.92, 0.1, 1.0),  // Yellow
-        3 => Color::new(0.85, 0.1, 1.0, 1.0),  // Magenta
-        4 => Color::new(0.1, 1.0, 0.4, 1.0),   // Green
-        5 => Color::new(1.0, 0.15, 0.35, 1.0), // Red
-        6 => Color::new(0.2, 0.45, 1.0, 1.0),  // Blue
-        7 => Color::new(1.0, 0.6, 0.05, 1.0),  // Orange
-        _ => WHITE,
-    }
-}
-
-#[allow(dead_code)]
-fn block_world_pos(x: i8, y: i8, z: i8) -> Vec3 {
-    block_world_pos_at(x, y, z, 0.0)
-}
 
 pub fn window_conf() -> Conf {
     Conf {
@@ -87,6 +69,126 @@ enum BattleScreen {
     GameOver(Menu, MatchWinner),
 }
 
+/// Battle-mode per-frame state: P1/P2 input, tick, menu-screen transitions. Split out of
+/// `abattle_main` (Phase 4, Sprint 8 tech debt) — no behavior change, same mutations in order.
+#[allow(clippy::too_many_arguments)]
+fn abattle_update(
+    screen: &mut BattleScreen,
+    mode: GameMode,
+    p1_game: &mut SpatialGame,
+    p2_game: &mut SpatialGame,
+    last_tick: &mut f64,
+    quit_to_menu: &mut bool,
+) {
+    match screen {
+        BattleScreen::Playing => {
+            if is_key_pressed(KeyCode::Escape) {
+                *screen = BattleScreen::Paused(Menu::pause_menu());
+            } else if is_key_pressed(KeyCode::R) {
+                *screen = BattleScreen::Paused(Menu::pause_menu_restart_selected());
+            } else {
+                // P1 Controls
+                if is_key_pressed(KeyCode::A) | is_key_pressed(KeyCode::Left) { p1_game.move_x(-1); }
+                if is_key_pressed(KeyCode::D) | is_key_pressed(KeyCode::Right) { p1_game.move_x(1); }
+                if is_key_pressed(KeyCode::W) | is_key_pressed(KeyCode::Up) { p1_game.move_y(-1); }
+                if is_key_pressed(KeyCode::S) | is_key_pressed(KeyCode::Down) { p1_game.move_y(1); }
+                if is_key_pressed(KeyCode::X) { p1_game.rotate(Axis::X); }
+                if is_key_pressed(KeyCode::Y) { p1_game.rotate(Axis::Y); }
+                if is_key_pressed(KeyCode::Z) { p1_game.rotate(Axis::Z); }
+                if is_key_pressed(KeyCode::Space) { p1_game.hard_drop(); }
+
+                // P2 Controls (Local)
+                if mode == GameMode::TwoPlayerLocal && is_key_pressed(KeyCode::Enter) {
+                    p2_game.hard_drop();
+                }
+
+                let now = get_time();
+                let interval = (tetris::spatial_game::spatial_gravity_interval_ms(p1_game.level) as f64) / 1000.0;
+                if now - *last_tick >= interval {
+                    if mode == GameMode::VsCpu && macroquad::rand::gen_range(0, 10) < 3 {
+                        p2_game.move_x(if macroquad::rand::gen_range(0, 2) == 0 { 1 } else { -1 });
+                    }
+                    p1_game.tick();
+                    p2_game.tick();
+                    *last_tick = now;
+                }
+
+                let p1_dead = p1_game.state == GameState::GameOver;
+                let p2_dead = p2_game.state == GameState::GameOver;
+                if p1_dead || p2_dead {
+                    let winner = if p1_dead && !p2_dead {
+                        if mode == GameMode::VsCpu { MatchWinner::Cpu } else { MatchWinner::Player2 }
+                    } else if p2_dead && !p1_dead {
+                        MatchWinner::Player1
+                    } else {
+                        MatchWinner::None
+                    };
+                    *screen = BattleScreen::GameOver(Menu::game_over_menu(), winner);
+                }
+            }
+        }
+        BattleScreen::Paused(menu) => {
+            if is_key_pressed(KeyCode::Escape) {
+                *screen = BattleScreen::Playing;
+            } else if let Some(action) = menu.update() {
+                match action {
+                    MenuAction::Resume => *screen = BattleScreen::Playing,
+                    MenuAction::Restart => {
+                        *p1_game = SpatialGame::new();
+                        *p2_game = SpatialGame::new();
+                        *last_tick = get_time();
+                        *screen = BattleScreen::Playing;
+                    }
+                    MenuAction::QuitToMenu => *quit_to_menu = true,
+                    MenuAction::StartMode(_) => {}
+                }
+            }
+        }
+        BattleScreen::GameOver(menu, _winner) => {
+            if let Some(action) = menu.update() {
+                match action {
+                    MenuAction::Restart => {
+                        *p1_game = SpatialGame::new();
+                        *p2_game = SpatialGame::new();
+                        *last_tick = get_time();
+                        *screen = BattleScreen::Playing;
+                    }
+                    MenuAction::QuitToMenu => *quit_to_menu = true,
+                    MenuAction::Resume | MenuAction::StartMode(_) => {}
+                }
+            }
+        }
+    }
+}
+
+/// Battle-mode per-frame drawing: both boxes, HUD, winner title, menu overlay. Split out of
+/// `abattle_main` (Phase 4, Sprint 8 tech debt) — no behavior change, same draw calls in order.
+fn abattle_draw(
+    orbit_cam: &OrbitCamera,
+    p1_game: &SpatialGame,
+    p2_game: &SpatialGame,
+    mode: GameMode,
+    screen: &BattleScreen,
+) {
+    clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
+
+    set_camera(&orbit_cam.camera_3d());
+    draw_bounding_box_well_at(-3.5);
+    draw_spatial_grid_at(p1_game, -3.5);
+
+    draw_bounding_box_well_at(3.5);
+    draw_spatial_grid_at(p2_game, 3.5);
+
+    set_default_camera();
+    draw_battle_spatial_hud(p1_game, p2_game, mode);
+    if let BattleScreen::GameOver(_, winner) = screen {
+        draw_spatial_match_winner_title(*winner);
+    }
+    if let BattleScreen::Paused(menu) | BattleScreen::GameOver(menu, _) = screen {
+        menu.draw(screen_width(), screen_height());
+    }
+}
+
 async fn abattle_main(mode: GameMode) -> bool {
     let orbit_cam = OrbitCamera::default_3d_box();
     let mut p1_game = SpatialGame::new();
@@ -101,103 +203,8 @@ async fn abattle_main(mode: GameMode) -> bool {
 
         let mut quit_to_menu = false;
 
-        match &mut screen {
-            BattleScreen::Playing => {
-                if is_key_pressed(KeyCode::Escape) {
-                    screen = BattleScreen::Paused(Menu::pause_menu());
-                } else if is_key_pressed(KeyCode::R) {
-                    screen = BattleScreen::Paused(Menu::pause_menu_restart_selected());
-                } else {
-                    // P1 Controls
-                    if is_key_pressed(KeyCode::A) | is_key_pressed(KeyCode::Left) { p1_game.move_x(-1); }
-                    if is_key_pressed(KeyCode::D) | is_key_pressed(KeyCode::Right) { p1_game.move_x(1); }
-                    if is_key_pressed(KeyCode::W) | is_key_pressed(KeyCode::Up) { p1_game.move_y(-1); }
-                    if is_key_pressed(KeyCode::S) | is_key_pressed(KeyCode::Down) { p1_game.move_y(1); }
-                    if is_key_pressed(KeyCode::X) { p1_game.rotate(Axis::X); }
-                    if is_key_pressed(KeyCode::Y) { p1_game.rotate(Axis::Y); }
-                    if is_key_pressed(KeyCode::Z) { p1_game.rotate(Axis::Z); }
-                    if is_key_pressed(KeyCode::Space) { p1_game.hard_drop(); }
-
-                    // P2 Controls (Local)
-                    if mode == GameMode::TwoPlayerLocal && is_key_pressed(KeyCode::Enter) {
-                        p2_game.hard_drop();
-                    }
-
-                    let now = get_time();
-                    let interval = (tetris::spatial_game::spatial_gravity_interval_ms(p1_game.level) as f64) / 1000.0;
-                    if now - last_tick >= interval {
-                        if mode == GameMode::VsCpu && macroquad::rand::gen_range(0, 10) < 3 {
-                            p2_game.move_x(if macroquad::rand::gen_range(0, 2) == 0 { 1 } else { -1 });
-                        }
-                        p1_game.tick();
-                        p2_game.tick();
-                        last_tick = now;
-                    }
-
-                    let p1_dead = p1_game.state == GameState::GameOver;
-                    let p2_dead = p2_game.state == GameState::GameOver;
-                    if p1_dead || p2_dead {
-                        let winner = if p1_dead && !p2_dead {
-                            if mode == GameMode::VsCpu { MatchWinner::Cpu } else { MatchWinner::Player2 }
-                        } else if p2_dead && !p1_dead {
-                            MatchWinner::Player1
-                        } else {
-                            MatchWinner::None
-                        };
-                        screen = BattleScreen::GameOver(Menu::game_over_menu(), winner);
-                    }
-                }
-            }
-            BattleScreen::Paused(menu) => {
-                if is_key_pressed(KeyCode::Escape) {
-                    screen = BattleScreen::Playing;
-                } else if let Some(action) = menu.update() {
-                    match action {
-                        MenuAction::Resume => screen = BattleScreen::Playing,
-                        MenuAction::Restart => {
-                            p1_game = SpatialGame::new();
-                            p2_game = SpatialGame::new();
-                            last_tick = get_time();
-                            screen = BattleScreen::Playing;
-                        }
-                        MenuAction::QuitToMenu => quit_to_menu = true,
-                        MenuAction::StartMode(_) => {}
-                    }
-                }
-            }
-            BattleScreen::GameOver(menu, _winner) => {
-                if let Some(action) = menu.update() {
-                    match action {
-                        MenuAction::Restart => {
-                            p1_game = SpatialGame::new();
-                            p2_game = SpatialGame::new();
-                            last_tick = get_time();
-                            screen = BattleScreen::Playing;
-                        }
-                        MenuAction::QuitToMenu => quit_to_menu = true,
-                        MenuAction::Resume | MenuAction::StartMode(_) => {}
-                    }
-                }
-            }
-        }
-
-        clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
-
-        set_camera(&orbit_cam.camera_3d());
-        draw_bounding_box_well_at(-3.5);
-        draw_spatial_grid_at(&p1_game, -3.5);
-
-        draw_bounding_box_well_at(3.5);
-        draw_spatial_grid_at(&p2_game, 3.5);
-
-        set_default_camera();
-        draw_battle_spatial_hud(&p1_game, &p2_game, mode);
-        if let BattleScreen::GameOver(_, winner) = &screen {
-            draw_spatial_match_winner_title(*winner);
-        }
-        if let BattleScreen::Paused(menu) | BattleScreen::GameOver(menu, _) = &screen {
-            menu.draw(screen_width(), screen_height());
-        }
+        abattle_update(&mut screen, mode, &mut p1_game, &mut p2_game, &mut last_tick, &mut quit_to_menu);
+        abattle_draw(&orbit_cam, &p1_game, &p2_game, mode, &screen);
 
         // See gfx3d.rs's abattle_main — always cross a frame boundary before returning so the
         // next screen doesn't see a stale "just pressed" Enter.
@@ -209,6 +216,162 @@ async fn abattle_main(mode: GameMode) -> bool {
 }
 
 
+
+/// Single Player per-frame state: gameplay input/tick, menu-screen transitions, FX triggers.
+/// Split out of `amain` (Phase 4, Sprint 8 tech debt) — no behavior change, same mutations in the
+/// same order.
+#[allow(clippy::too_many_arguments)]
+fn amain_update(
+    screen: &mut SingleScreen,
+    game: &mut SpatialGame,
+    now: f64,
+    last_tick: &mut f64,
+    prev_active_z: &mut i8,
+    landing_fx: &mut LandingFx,
+    clear_fx: &mut ClearFx,
+    banner: &mut ScoreBanner,
+    orbit_cam: &mut OrbitCamera,
+    quit_to_menu: &mut bool,
+) {
+    match screen {
+        SingleScreen::Playing => {
+            if is_key_pressed(KeyCode::Escape) {
+                *screen = SingleScreen::Paused(Menu::pause_menu());
+            } else if is_key_pressed(KeyCode::R) {
+                *screen = SingleScreen::Paused(Menu::pause_menu_restart_selected());
+            } else {
+                handle_playing_input(game);
+
+                let interval = (tetris::spatial_game::spatial_gravity_interval_ms(game.level) as f64) / 1000.0;
+                if now - *last_tick >= interval {
+                    game.tick();
+                    *last_tick = now;
+
+                    // Detect genuine 3D piece lock landing
+                    if game.active_piece.z < *prev_active_z {
+                        landing_fx.trigger(now);
+                        orbit_cam.add_shake(0.35);
+                    }
+                }
+                *prev_active_z = game.active_piece.z;
+
+                // Detect 3D layer clear event immediately on lock
+                if game.last_layers_cleared > 0 && clear_fx.start_time.is_none() {
+                    let count = game.last_layers_cleared;
+                    clear_fx.trigger(now, count);
+                    orbit_cam.add_shake(0.85);
+
+                    let msg = format_clear_banner(count, true);
+                    banner.trigger(msg.to_string(), now);
+                }
+
+                if game.state == GameState::GameOver {
+                    *screen = SingleScreen::GameOver(Menu::game_over_menu());
+                }
+            }
+        }
+        SingleScreen::Paused(menu) => {
+            if is_key_pressed(KeyCode::Escape) {
+                *screen = SingleScreen::Playing;
+            } else if let Some(action) = menu.update() {
+                let restart = matches!(action, MenuAction::Restart);
+                if resolve_menu_action(action, quit_to_menu) {
+                    if restart {
+                        *game = SpatialGame::new();
+                        *landing_fx = LandingFx::new();
+                        *clear_fx = ClearFx::new();
+                        *banner = ScoreBanner::new();
+                        *prev_active_z = game.active_piece.z;
+                        *last_tick = get_time();
+                    }
+                    *screen = SingleScreen::Playing;
+                }
+            }
+        }
+        SingleScreen::GameOver(menu) => {
+            if let Some(action) = menu.update() {
+                let restart = matches!(action, MenuAction::Restart);
+                if resolve_menu_action(action, quit_to_menu) {
+                    if restart {
+                        *game = SpatialGame::new();
+                        *landing_fx = LandingFx::new();
+                        *clear_fx = ClearFx::new();
+                        *banner = ScoreBanner::new();
+                        *prev_active_z = game.active_piece.z;
+                        *last_tick = get_time();
+                    }
+                    *screen = SingleScreen::Playing;
+                }
+            }
+        }
+    }
+}
+
+/// Single Player per-frame drawing: box/HUD/FX/menu overlay + camera/viewcube update. Split out
+/// of `amain` (Phase 4, Sprint 8 tech debt) — no behavior change, same draw calls in the same
+/// order (drawing and the viewcube's camera-drag handling were already interleaved in the
+/// original code, so this function does both rather than pretending they're separable).
+#[allow(clippy::too_many_arguments)]
+fn amain_draw(
+    screen: &SingleScreen,
+    game: &SpatialGame,
+    now: f64,
+    landing_fx: &mut LandingFx,
+    clear_fx: &mut ClearFx,
+    banner: &mut ScoreBanner,
+    orbit_cam: &mut OrbitCamera,
+    viewcube: &mut ViewCubeGizmo,
+) {
+    clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
+
+    set_camera(&orbit_cam.camera_3d());
+    draw_bounding_box_well_at(0.0);
+    draw_spatial_grid_at(game, 0.0);
+
+    // Draw 3D Landing shockwave pulses
+    let floor_y = ORIGIN_Y - BOX_HEIGHT as f32 * CUBE_SIZE;
+    landing_fx.draw_3d_shockwave(now, floor_y, BOX_WIDTH, CUBE_SIZE);
+
+    // Draw 3D Layer Clear shockwave burst rings
+    if let Some(start) = clear_fx.start_time {
+        let elapsed = now - start;
+        if elapsed < FX_DURATION {
+            let t = (elapsed / FX_DURATION) as f32;
+            let alpha = (1.0 - t) * 0.95;
+            let gold = Color::new(1.0, 0.9, 0.2, alpha);
+            let cyan = Color::new(0.0, 0.95, 1.0, alpha);
+
+            let center_y = ORIGIN_Y - (BOX_HEIGHT as f32 * CUBE_SIZE) / 2.0;
+            let size = (BOX_WIDTH as f32 * CUBE_SIZE) * (1.0 + t * 0.6);
+
+            draw_cube(vec3(0.0, center_y, 0.0), vec3(size, CUBE_SIZE * 2.0, size), None, Color::new(1.0, 0.8, 0.1, alpha * 0.3));
+            draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(size, CUBE_SIZE * 2.0, size), gold);
+            draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(size * 1.15, CUBE_SIZE * 2.5, size * 1.15), cyan);
+        } else {
+            clear_fx.start_time = None;
+        }
+    }
+
+    set_default_camera();
+    draw_hud(game);
+
+    // Draw Layer Clear Full-Screen Flash Burst
+    clear_fx.draw_flash_burst(now);
+
+    // Draw Layer Clear Score Banner
+    banner.draw(now);
+
+    if let SingleScreen::Paused(menu) | SingleScreen::GameOver(menu) = screen {
+        menu.draw(screen_width(), screen_height());
+    }
+
+    let reset_requested = viewcube.update_and_draw(&mut orbit_cam.yaw, &mut orbit_cam.pitch);
+    if reset_requested {
+        *orbit_cam = OrbitCamera::default_3d_box();
+    }
+
+    orbit_cam.update(viewcube.is_dragging);
+}
 
 async fn amain(mut game: SpatialGame) {
     let mut orbit_cam = OrbitCamera::default_3d_box();
@@ -231,132 +394,29 @@ async fn amain(mut game: SpatialGame) {
 
         let mut quit_to_menu = false;
 
-        match &mut screen {
-            SingleScreen::Playing => {
-                if is_key_pressed(KeyCode::Escape) {
-                    screen = SingleScreen::Paused(Menu::pause_menu());
-                } else if is_key_pressed(KeyCode::R) {
-                    screen = SingleScreen::Paused(Menu::pause_menu_restart_selected());
-                } else {
-                    handle_playing_input(&mut game);
+        amain_update(
+            &mut screen,
+            &mut game,
+            now,
+            &mut last_tick,
+            &mut prev_active_z,
+            &mut landing_fx,
+            &mut clear_fx,
+            &mut banner,
+            &mut orbit_cam,
+            &mut quit_to_menu,
+        );
 
-                    let interval = (tetris::spatial_game::spatial_gravity_interval_ms(game.level) as f64) / 1000.0;
-                    if now - last_tick >= interval {
-                        game.tick();
-                        last_tick = now;
-
-                        // Detect genuine 3D piece lock landing
-                        if game.active_piece.z < prev_active_z {
-                            landing_fx.trigger(now);
-                            orbit_cam.add_shake(0.35);
-                        }
-                    }
-                    prev_active_z = game.active_piece.z;
-
-                    // Detect 3D layer clear event immediately on lock
-                    if game.last_layers_cleared > 0 && clear_fx.start_time.is_none() {
-                        let count = game.last_layers_cleared;
-                        clear_fx.trigger(now, count);
-                        orbit_cam.add_shake(0.85);
-
-                        let msg = format_clear_banner(count, true);
-                        banner.trigger(msg.to_string(), now);
-                    }
-
-                    if game.state == GameState::GameOver {
-                        screen = SingleScreen::GameOver(Menu::game_over_menu());
-                    }
-                }
-            }
-            SingleScreen::Paused(menu) => {
-                if is_key_pressed(KeyCode::Escape) {
-                    screen = SingleScreen::Playing;
-                } else if let Some(action) = menu.update() {
-                    match action {
-                        MenuAction::Resume => screen = SingleScreen::Playing,
-                        MenuAction::Restart => {
-                            game = SpatialGame::new();
-                            landing_fx = LandingFx::new();
-                            clear_fx = ClearFx::new();
-                            banner = ScoreBanner::new();
-                            prev_active_z = game.active_piece.z;
-                            last_tick = get_time();
-                            screen = SingleScreen::Playing;
-                        }
-                        MenuAction::QuitToMenu => quit_to_menu = true,
-                        MenuAction::StartMode(_) => {}
-                    }
-                }
-            }
-            SingleScreen::GameOver(menu) => {
-                if let Some(action) = menu.update() {
-                    match action {
-                        MenuAction::Restart => {
-                            game = SpatialGame::new();
-                            landing_fx = LandingFx::new();
-                            clear_fx = ClearFx::new();
-                            banner = ScoreBanner::new();
-                            prev_active_z = game.active_piece.z;
-                            last_tick = get_time();
-                            screen = SingleScreen::Playing;
-                        }
-                        MenuAction::QuitToMenu => quit_to_menu = true,
-                        MenuAction::Resume | MenuAction::StartMode(_) => {}
-                    }
-                }
-            }
-        }
-
-        clear_background(Color::new(0.02, 0.02, 0.07, 1.0));
-
-        set_camera(&orbit_cam.camera_3d());
-        draw_bounding_box_well_at(0.0);
-        draw_spatial_grid_at(&game, 0.0);
-
-
-        // Draw 3D Landing shockwave pulses
-        let floor_y = ORIGIN_Y - BOX_HEIGHT as f32 * CUBE_SIZE;
-        landing_fx.draw_3d_shockwave(now, floor_y, BOX_WIDTH, CUBE_SIZE);
-
-        // Draw 3D Layer Clear shockwave burst rings
-        if let Some(start) = clear_fx.start_time {
-            let elapsed = now - start;
-            if elapsed < FX_DURATION {
-                let t = (elapsed / FX_DURATION) as f32;
-                let alpha = (1.0 - t) * 0.95;
-                let gold = Color::new(1.0, 0.9, 0.2, alpha);
-                let cyan = Color::new(0.0, 0.95, 1.0, alpha);
-
-                let center_y = ORIGIN_Y - (BOX_HEIGHT as f32 * CUBE_SIZE) / 2.0;
-                let size = (BOX_WIDTH as f32 * CUBE_SIZE) * (1.0 + t * 0.6);
-
-                draw_cube(vec3(0.0, center_y, 0.0), vec3(size, CUBE_SIZE * 2.0, size), None, Color::new(1.0, 0.8, 0.1, alpha * 0.3));
-                draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(size, CUBE_SIZE * 2.0, size), gold);
-                draw_cube_wires(vec3(0.0, center_y, 0.0), vec3(size * 1.15, CUBE_SIZE * 2.5, size * 1.15), cyan);
-            } else {
-                clear_fx.start_time = None;
-            }
-        }
-
-        set_default_camera();
-        draw_hud(&game);
-
-        // Draw Layer Clear Full-Screen Flash Burst
-        clear_fx.draw_flash_burst(now);
-
-        // Draw Layer Clear Score Banner
-        banner.draw(now);
-
-        if let SingleScreen::Paused(menu) | SingleScreen::GameOver(menu) = &screen {
-            menu.draw(screen_width(), screen_height());
-        }
-
-        let reset_requested = viewcube.update_and_draw(&mut orbit_cam.yaw, &mut orbit_cam.pitch);
-        if reset_requested {
-            orbit_cam = OrbitCamera::default_3d_box();
-        }
-
-        orbit_cam.update(viewcube.is_dragging);
+        amain_draw(
+            &screen,
+            &game,
+            now,
+            &mut landing_fx,
+            &mut clear_fx,
+            &mut banner,
+            &mut orbit_cam,
+            &mut viewcube,
+        );
 
         // See abattle_main's quit_to_menu handling — always cross a frame boundary before
         // returning so the next screen doesn't see a stale "just pressed" Enter.

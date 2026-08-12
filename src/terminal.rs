@@ -33,14 +33,6 @@ fn piece_color(id: u8) -> Color {
     }
 }
 
-#[allow(dead_code)]
-pub fn run(game: Game) -> io::Result<()> {
-
-    let mut battle = BattleState::new(GameMode::Single);
-    battle.player1 = game;
-    run_battle(battle)
-}
-
 pub fn run_battle(battle: BattleState) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();

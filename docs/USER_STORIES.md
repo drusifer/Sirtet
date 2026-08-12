@@ -429,4 +429,93 @@ the binary.
 - No dead end: every terminal game state (win, loss, pause) has a visible, reachable way back to
   either another match or the main menu.
 
+---
+
+# Sprint 8 — Tech Debt: Normalize Architecture, Dedup Code, Remove Dead Parts, Fix Complexity
+
+**Owner:** Cypher (PM) + Morpheus (Tech Lead) — Tier 2 fast-track (combined story + architecture)
+**Status:** Draft for Smith review (combined Gate)
+**Date:** 2026-08-11
+
+**Motivation:** User-requested tech-debt sprint. All four items below were verified against the
+current codebase (not assumed) before scoping: `cargo clippy --all-targets` confirmed clean, then
+each dead-code candidate was grep-traced for zero callers, and each duplication candidate was
+diffed to confirm near-identical content, before being written up as a story. This is a Tier 2
+sprint — no end-user-facing behavior changes; acceptance criteria are proof-of-no-regression
+(build/lint/test clean, visual/behavioral parity), not new UX.
+
+**Explicitly out of scope (considered, deferred):** `game.rs`/`spatial_game.rs` (2D vs 3D game
+state machines) and the full-file duplication between `gfx3d.rs`/`gfx3d_box.rs` (window setup,
+HUD drawing, battle-mode loop) share structural shape but operate on genuinely different board
+representations (flat 2D grid vs true 3D spatial). Merging them is a real architecture project,
+not a small, safe, in-place refactor — it risks introducing gameplay bugs for a payoff this sprint
+isn't sized for. Recommend as a future dedicated spike if pursued, not folded in here.
+
+## US-36: Remove Verified Dead Code
+**As a** maintainer, **I want** unused, `#[allow(dead_code)]`-suppressed functions deleted,
+**so that** the codebase doesn't carry silently-unused surface area that misleads future readers
+into thinking it's load-bearing.
+
+**AC:**
+- `gfx3d.rs::cell_world_pos()`, `gfx3d_box.rs::block_world_pos()`, and `terminal.rs::run()` are
+  deleted along with their `#[allow(dead_code)]` attributes.
+- `cargo build --all-targets`, `cargo clippy --all-targets`, and `cargo test` all pass clean with
+  zero warnings after removal — a clean clippy pass with the `allow` gone is the actual proof these
+  were dead, not just a grep that missed a caller.
+- No behavior change: native and WASM builds run identically to before.
+
+## US-37: Deduplicate the Shared Piece-Color Palette
+**As a** maintainer, **I want** the byte-identical `piece_color()` palette in `gfx3d.rs` and
+`gfx3d_box.rs` defined exactly once, **so that** a future color tweak can't be applied to one
+renderer and silently forgotten in the other.
+
+**AC:**
+- One shared `piece_color(id: u8) -> Color` (macroquad) used by both `gfx3d.rs` and
+  `gfx3d_box.rs`; the per-file copies are removed.
+- Visual output is unchanged — same 7 tetromino colors, verified by running both renderers.
+- `terminal.rs`'s own `piece_color` (ratatui `Color`, a different type/library) is explicitly out
+  of scope — it's a different concern, not true duplication.
+
+## US-38: Deduplicate `amain`'s Pause / Game-Over Menu Dispatch
+**As a** maintainer, **I want** the near-identical `SingleScreen::Paused`/`SingleScreen::GameOver`
+menu-action handling in `gfx3d.rs::amain` and `gfx3d_box.rs::amain` unified into one shared
+implementation, **so that** a future menu behavior change (e.g. a new `MenuAction` variant) is
+implemented once instead of twice in lockstep, with the risk of the two copies drifting apart.
+
+**AC:**
+- The shared dispatch logic (Resume / Restart / QuitToMenu handling, currently ~35 near-identical
+  lines per file) lives in one place, parameterized over the one genuine per-renderer difference:
+  how to construct a fresh game (`Game::new()` + tracking `active().y` vs `SpatialGame::new()` +
+  tracking `active_piece.z`).
+- Both `amain` functions call the shared logic. Existing pause/restart/quit/resume behavior is
+  unchanged — Trin re-verifies via existing menu tests plus a live smoke pass of both renderers.
+- `SingleScreen` stays where it already correctly lives (`menu.rs`) — this story unifies its
+  *handling*, not its definition.
+
+## US-39: Reduce Complexity of the `amain`/`abattle_main` Functions
+**[Corrected 2026-08-11, mid-Phase-4 — see `neo.docs/state.md`]:** the original draft named
+`run_app_async` as the target, based on a grep that missed `async fn`/`pub async fn` patterns and
+silently mis-measured the gap between two small functions as one ~320-line function.
+`run_app_async` is actually already small (~20 lines) and clean. The real god-functions —
+confirmed via `grep -n "^async fn \|^pub async fn "` in both files — are `amain` (Single Player
+loop, ~150 lines) and `abattle_main` (Battle loop, ~120 lines), same shape in `gfx3d.rs` and
+`gfx3d_box.rs`. AC below is corrected to match; underlying motivation is unchanged.
+
+**As a** maintainer, **I want** `amain`'s and `abattle_main`'s per-frame logic split into smaller,
+named functions, **so that** the input/state-transition handling for each screen state and the
+per-frame drawing can each be read and reasoned about independently instead of requiring the
+whole ~120-150-line loop body held in your head at once.
+
+**AC:**
+- Each of `amain`/`abattle_main` (both files) has its per-iteration state-transition/input/tick
+  logic extracted into one named function and its per-iteration drawing extracted into another,
+  called once per loop iteration — the `loop { ... }` itself and its `next_frame().await` stay in
+  place (the frame-boundary quit-to-menu pattern documented in `neo.docs/state.md` depends on the
+  exact position of that yield point relative to the return, so the loop structure isn't touched).
+- No behavior change — same control flow, same async yield points, all existing tests still pass.
+- The split shape is consistent between `gfx3d.rs` and `gfx3d_box.rs` (same decomposition pattern
+  applied to both, easier to keep in sync going forward).
+- Sequenced last (Phase 4) since it's easiest to do cleanly once Phases 2-3 have already pulled the
+  shared pieces (`piece_color`, menu dispatch) out of the function bodies being split.
+
 

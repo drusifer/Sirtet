@@ -289,6 +289,41 @@ impl Default for OptionsScreen {
     }
 }
 
+/// Resolves a `MenuAction` selected from a `SingleScreen::Paused`/`SingleScreen::GameOver` menu —
+/// identical decision in both `gfx3d.rs::amain` and `gfx3d_box.rs::amain`'s Paused/GameOver arms.
+/// Returns `true` if the screen should transition to `Playing` (caller resets renderer-typed game
+/// state first when `action` is `Restart` — that reset isn't done here since it differs per
+/// renderer and per FX types the caller owns). Returns `false` otherwise, setting
+/// `*quit_to_menu = true` on `QuitToMenu`. `Resume` and `StartMode` are only ever offered by
+/// `pause_menu()`/`main_menu()` respectively — `game_over_menu()` never includes them, so treating
+/// `Resume` as "go to Playing" here is safe for both call sites even though only `Paused` can
+/// actually produce it.
+pub fn resolve_menu_action(action: MenuAction, quit_to_menu: &mut bool) -> bool {
+    match action {
+        MenuAction::Resume | MenuAction::Restart => true,
+        MenuAction::QuitToMenu => {
+            *quit_to_menu = true;
+            false
+        }
+        MenuAction::StartMode(_) => false,
+    }
+}
+
+/// Shared tetromino color palette for the GPU renderers (`gfx3d.rs`, `gfx3d_box.rs`) — identical
+/// between the two, so it lives here once instead of as two copies that could drift apart.
+pub fn piece_color(id: u8) -> Color {
+    match id {
+        1 => Color::new(0.0, 0.95, 1.0, 1.0),  // Cyan
+        2 => Color::new(1.0, 0.92, 0.1, 1.0),  // Yellow
+        3 => Color::new(0.85, 0.1, 1.0, 1.0),  // Magenta
+        4 => Color::new(0.1, 1.0, 0.4, 1.0),   // Green
+        5 => Color::new(1.0, 0.15, 0.35, 1.0), // Red
+        6 => Color::new(0.2, 0.45, 1.0, 1.0),  // Blue
+        7 => Color::new(1.0, 0.6, 0.05, 1.0),  // Orange
+        _ => WHITE,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,5 +393,45 @@ mod tests {
         opts.cycle_value(1);
         assert_eq!(opts.mode(), GameMode::TwoPlayerLocal);
         assert_eq!(opts.renderer(), RendererKind::NeonGrid2D);
+    }
+
+    #[test]
+    fn resolve_menu_action_resume_transitions_to_playing() {
+        let mut quit_to_menu = false;
+        assert!(resolve_menu_action(MenuAction::Resume, &mut quit_to_menu));
+        assert!(!quit_to_menu);
+    }
+
+    #[test]
+    fn resolve_menu_action_restart_transitions_to_playing() {
+        let mut quit_to_menu = false;
+        assert!(resolve_menu_action(MenuAction::Restart, &mut quit_to_menu));
+        assert!(!quit_to_menu);
+    }
+
+    #[test]
+    fn resolve_menu_action_quit_to_menu_stays_and_sets_the_flag() {
+        let mut quit_to_menu = false;
+        assert!(!resolve_menu_action(MenuAction::QuitToMenu, &mut quit_to_menu));
+        assert!(quit_to_menu);
+    }
+
+    #[test]
+    fn resolve_menu_action_start_mode_stays_without_setting_the_flag() {
+        let mut quit_to_menu = false;
+        assert!(!resolve_menu_action(
+            MenuAction::StartMode(GameMode::Single),
+            &mut quit_to_menu
+        ));
+        assert!(!quit_to_menu);
+    }
+
+    #[test]
+    fn game_over_menu_never_offers_resume_or_start_mode() {
+        let menu = Menu::game_over_menu();
+        assert!(!menu
+            .options
+            .iter()
+            .any(|(action, _)| matches!(action, MenuAction::Resume | MenuAction::StartMode(_))));
     }
 }

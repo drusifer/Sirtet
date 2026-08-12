@@ -129,3 +129,25 @@ XWayland/XTest path this sandbox couldn't exercise.
   literal 75%-by-line-count cut, since Sprint 1 was fully self-contained (planning through
   launch) and cutting mid-Sprint-2 would have separated active phase context from the
   retro/launch messages that reference it.
+- CHAT.md archived at Sprint 8's groom (70 messages, `agents/chat_archive/CHAT_sprint8.md`) —
+  same threshold-based archiving, no special reasoning needed since Sprint 8 was fully
+  self-contained within its own log.
+- **Sprint 8 mid-implementation scope correction (US-39):** the story was drafted against
+  `run_app_async`, which turned out to already be ~20 lines and clean — an early `grep`
+  during initial investigation matched only `^fn `/`^pub fn ` and silently missed `async fn`/
+  `pub async fn`, merging 3 adjacent functions' line spans into what looked like one ~320-line
+  function. Neo caught this mid-Phase-4 (before writing any code), flagged it to Morpheus
+  rather than silently redirecting the work, Morpheus verified independently, and
+  `USER_STORIES.md`/`task.md`/`ARCHITECTURE.md` were corrected before implementation
+  proceeded against the real target (`amain`/`abattle_main`, ~120-150 lines each). Recorded
+  here as a process lesson: **when grepping for Rust function definitions, always include
+  `async fn`/`pub async fn` patterns** — an incomplete grep doesn't just miss functions, it can
+  silently misattribute their line ranges to whatever function comes before the gap.
+- **Sprint 8 live-GUI-testing gap (same class as the dev-sandbox limitation above, still
+  unresolved for this session type):** Phases 2-4 all touch macroquad-rendered pause/restart/
+  quit/game-over flows, but this session's environment has no display to drive an interactive
+  macroquad window (no `xdotool`/`xev`-style access at all, not even the XWayland path used to
+  diagnose the Wayland bug above). Verified everything possible via code reasoning, full test
+  suite, and static analysis (grepping for exact behavior-preservation invariants like
+  `game_over_menu()`'s options list and `next_frame().await` placement) instead — flagged
+  explicitly to Smith for the Stage 3 end-to-end test rather than silently assumed covered.

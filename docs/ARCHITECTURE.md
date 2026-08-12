@@ -340,5 +340,70 @@ each renderer remain integration-level, verified by Smith's Gate-close usability
 render loops aren't unit-testable directly, consistent with existing `gfx3d.rs`/`gfx3d_box.rs`
 coverage strategy).
 
+---
+
+# Sprint 8 — Tech Debt Architecture (Tier 2 fast-track, combined with Cypher's stories)
+
+## Decision: shared `menu.rs` grows a home for cross-renderer *logic*, not just widgets
+
+`src/menu.rs` currently holds shared UI (`Menu`, `MenuAction`, `SingleScreen`) but the *handling*
+of `SingleScreen` transitions (US-38) is still duplicated per-renderer. Rather than introduce a
+new module, the extracted dispatch function lives in `menu.rs` alongside the type it operates on
+— same rationale as `camera.rs`'s `apply_preset_hotkeys()` (Sprint 7): one shared, DRY home for a
+cross-renderer behavior, called once per call site with zero per-renderer duplication.
+
+```rust
+// src/menu.rs (extended)
+pub fn handle_single_screen<G>(
+    screen: &mut SingleScreen,
+    game: &mut G,
+    reset: impl FnOnce() -> G,
+    mut quit_to_menu: impl FnMut(),
+) { ... }
+```
+The exact generic shape (closure-based `reset`, or a small trait implemented by `Game`/
+`SpatialGame`) is Neo's implementation call — the AC only requires the duplication gone and
+behavior unchanged, not a specific mechanism. A closure-based approach is likely simplest since
+the two per-renderer differences (`Game::new()`/`.active().y` vs `SpatialGame::new()`/
+`.active_piece.z`) don't share a common trait today and adding one just for this would be more
+machinery than the dedup is worth.
+
+## Decision: `piece_color` (US-37) moves to `menu.rs` too, not a new module
+
+Same reasoning — it's a small, pure, shared-by-both-GPU-renderers function; a dedicated
+`colors.rs` for one function would be a heavier abstraction than the problem calls for. If a
+second shared color/palette helper shows up later, promote both to their own module then.
+
+## Decision: US-39's split is mechanical, not architectural
+
+**[Corrected 2026-08-11]:** target was `run_app_async`; actually already ~20 lines and clean (a
+grep gap made it look ~320 lines by merging it with the next 3 functions' spans). Real target,
+same reasoning, is `amain`/`abattle_main` (~120-150 lines each, both files) — see
+`neo.docs/state.md` for the full correction trail.
+
+`amain`/`abattle_main`'s eventual shape (update fn / draw fn, called once per loop iteration)
+should fall out of Phases 2-3 already having pulled `piece_color` and the `SingleScreen`/menu
+dispatch out of the bodies — Phase 4 is reorganizing what's left, not redesigning it. No new state
+machine, no new types. The `loop { ... next_frame().await ... }` shell stays exactly as-is —
+splitting *inside* it is safe, but the loop's own shape carries the frame-boundary
+quit-to-menu-on-Enter fix from Sprint 7 and must not move.
+
+## Files touched (Sprint 8)
+
+| File | Change |
+|------|--------|
+| `src/gfx3d.rs` | Remove `cell_world_pos()`; remove local `piece_color()`; `amain` calls shared `menu::handle_single_screen`; `run_app_async` split into smaller named functions |
+| `src/gfx3d_box.rs` | Remove `block_world_pos()`; remove local `piece_color()`; same `amain`/`run_app_async` changes as `gfx3d.rs` |
+| `src/terminal.rs` | Remove unused `run()` + its `#[allow(dead_code)]` |
+| `src/menu.rs` | `+ pub fn piece_color(...)`, `+ pub fn handle_single_screen(...)` |
+
+## Testability
+
+All four stories are refactor-only (no new user-observable behavior), so the acceptance bar is:
+existing 71/71 tests stay green, `cargo clippy --all-targets` stays at 0 warnings, and Trin does a
+live smoke pass of both GPU renderers' pause/restart/quit/game-over flow to catch anything the
+existing test suite doesn't cover (menu *rendering* and macroquad-driven loops aren't unit-tested
+today, consistent with Sprint 7's coverage strategy). No new tests are required beyond what
+already exists, since no new behavior is being added.
 
 
