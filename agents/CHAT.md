@@ -54,3 +54,15 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
+
+---
+[<small>2026-08-12 13:34:55</small>] [**User**]->[**all**] *request*:
+ wdyt from a ux perspective
+
+---
+[<small>2026-08-12 13:35:29</small>] [**Smith**]->[**all**] *resume*:
+ Resuming as Smith. Reviewing the diagram redesign from a UX perspective.
+
+---
+[<small>2026-08-12 13:37:25</small>] [**Smith**]->[**all**] *user consult*:
+ Found a real, code-verified issue with the Note-based design: Note over A,B spans the full x-distance between A and B regardless of participants between them (confirmed in mermaid's own renderer source). Note right of A is actor-anchored and independent of recipient distance. Recommend switching. Full writeup in smith.docs/state.md and to user.

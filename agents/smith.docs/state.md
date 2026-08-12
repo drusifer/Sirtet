@@ -2,6 +2,20 @@
 
 ## Context
 ### Recent Decisions
+- **CHAT diagram UX consult (2026-08-12):** reviewed the `bobp chat-diagram` redesign (Note-based
+  messages, part of `bob_protocol`, not this repo) for readability. Could not view the actual
+  GitHub-rendered page (no browser tool connected this session), so grounded the review in
+  mermaid's own renderer source instead of guessing — found and verified `Note over A,B`'s width
+  is `Math.abs(fromActor.x - toActor.x) + actorMargin` (sequenceDiagram-*.mjs line ~4362), meaning
+  it spans every lane between A and B, not just a box near them. With 10 participants and frequent
+  broadcast messages (`Cypher->>All`, etc.), many per-message notes render near full diagram width
+  — directly undermines the "narrower" goal the redesign was for. `Note right of A` (RIGHTOF
+  branch, same source) is actor-anchored and text-width-driven regardless of recipient distance —
+  verified as the correct fix. Recommended switching per-message notes to `Note right of`, keeping
+  `Note over {first},{last}` only for the intentional full-width date-divider notes. Reported to
+  user with citation-backed reasoning per Smith's "never speculate, verify" mandate — did not
+  implement without user confirmation since this is `bob_protocol`'s code, not tetris's, and I'd
+  just made two iterative changes there already this session.
 - Sprint 8 Stage 3 end-to-end test: **BLOCKED, requesting user verification.** Static/HCI review
   found zero user-facing changes across all 4 phases — `web/index.html`'s control legend
   untouched, no menu text/option/binding changed anywhere, matching every story's "no behavior
