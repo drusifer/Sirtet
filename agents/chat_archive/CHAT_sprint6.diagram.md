@@ -10,5 +10,5 @@ sequenceDiagram
     participant Morpheus
     participant Neo
     Note over Morpheus,Neo: 📅 2026-08-09
-    Morpheus->>Neo: lead handoff — Sprint 6 Plan approved by Morpheus &<br/>Smith. Phase 1 ready for implementation.<br/>@Neo *swe impl phase-1
+    Morpheus->>Neo: "lead handoff — Sprint 6 Plan approved by Morpheus &<br/>Smith. Phase 1 ready for implementation.<br/>@Neo *swe impl phase-1"
 ```
